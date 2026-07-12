@@ -5,21 +5,62 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+type UseStreamJSONOptions<T> = RequestInit & {
+  filter?: (item: T) => boolean;
+  transform?: (item: any) => T;
+  dataPath?: string | RegExp;
+  pageSize?: number;
+  initialData?: T[];
+  keepPreviousData?: boolean;
+  execute?: boolean;
+  onError?: (error: Error) => void;
+  onData?: (data: T) => void;
+  onWillExecute?: (args: [string, RequestInit]) => void;
+  failureToastOptions?: any;
+};
+
+function abortWithSignalReason(controller: AbortController, signal: AbortSignal) {
+  if (controller.signal.aborted) return;
+  try {
+    controller.abort(signal.reason);
+  } catch {
+    controller.abort();
+  }
+}
+
+function composeAbortSignal(lifecycleSignal: AbortSignal, callerSignal?: AbortSignal | null) {
+  const controller = new AbortController();
+  const cleanups: Array<() => void> = [];
+  const observedSignals = new Set<AbortSignal>();
+
+  const observe = (signal?: AbortSignal | null) => {
+    if (!signal || observedSignals.has(signal)) return;
+    observedSignals.add(signal);
+
+    if (signal.aborted) {
+      abortWithSignalReason(controller, signal);
+      return;
+    }
+
+    const abort = () => abortWithSignalReason(controller, signal);
+    signal.addEventListener('abort', abort, { once: true });
+    cleanups.push(() => signal.removeEventListener('abort', abort));
+  };
+
+  observe(lifecycleSignal);
+  observe(callerSignal);
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const cleanup of cleanups) cleanup();
+    },
+  };
+}
+
 export function useStreamJSON<T = any>(
   url: string | Request,
-  options?: RequestInit & {
-    filter?: (item: T) => boolean;
-    transform?: (item: any) => T;
-    dataPath?: string | RegExp;
-    pageSize?: number;
-    initialData?: T[];
-    keepPreviousData?: boolean;
-    execute?: boolean;
-    onError?: (error: Error) => void;
-    onData?: (data: T) => void;
-    onWillExecute?: (args: [string, RequestInit]) => void;
-    failureToastOptions?: any;
-  }
+  options?: UseStreamJSONOptions<T>
 ) {
   const pageSize = options?.pageSize ?? 20;
   const [allItems, setAllItems] = useState<T[]>(options?.initialData || []);
@@ -27,22 +68,59 @@ export function useStreamJSON<T = any>(
   const [error, setError] = useState<Error | undefined>(undefined);
   const [displayCount, setDisplayCount] = useState(pageSize);
 
+  const mountedRef = useRef(true);
+  const runIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  const abortCurrentRun = useCallback(() => {
+    const controller = abortControllerRef.current;
+    if (!controller) return;
+    controller.abort();
+    abortControllerRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      runIdRef.current += 1;
+      abortCurrentRun();
+    };
+  }, [abortCurrentRun]);
+
   const fetchAndParse = useCallback(async () => {
     const opts = optionsRef.current;
-    if (opts?.execute === false) return;
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    abortCurrentRun();
+
+    if (opts?.execute === false || !mountedRef.current) return;
+
+    const lifecycleController = new AbortController();
+    const composedAbort = composeAbortSignal(lifecycleController.signal, opts?.signal);
+    const isCurrentRun = () => (
+      mountedRef.current
+      && runIdRef.current === runId
+      && abortControllerRef.current === lifecycleController
+    );
+    abortControllerRef.current = lifecycleController;
 
     setIsLoading(true);
     setError(undefined);
 
     try {
       const resolvedUrl = typeof url === 'string' ? url : url.url;
-      const res = await fetch(resolvedUrl, opts);
+      const fetchOptions: RequestInit = {
+        ...(opts || {}),
+        signal: composedAbort.signal,
+      };
+      const res = await fetch(resolvedUrl, fetchOptions);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const json = await res.json();
+      if (!isCurrentRun()) return;
 
       let items: any[];
       if (opts?.dataPath) {
@@ -59,17 +137,29 @@ export function useStreamJSON<T = any>(
       if (!Array.isArray(items)) items = [items];
       if (opts?.transform) items = items.map(opts.transform);
       if (opts?.filter) items = items.filter(opts.filter);
+      if (!isCurrentRun()) return;
 
       setAllItems(items as T[]);
-      items.forEach((item) => opts?.onData?.(item as T));
+      for (const item of items) {
+        if (!isCurrentRun()) break;
+        opts?.onData?.(item as T);
+      }
     } catch (err) {
+      if (!isCurrentRun() || lifecycleController.signal.aborted) return;
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);
       opts?.onError?.(e);
     } finally {
-      setIsLoading(false);
+      composedAbort.cleanup();
+      const shouldFinishCurrentRun = isCurrentRun();
+      if (abortControllerRef.current === lifecycleController) {
+        abortControllerRef.current = null;
+      }
+      if (shouldFinishCurrentRun) {
+        setIsLoading(false);
+      }
     }
-  }, [url]);
+  }, [url, abortCurrentRun]);
 
   useEffect(() => {
     fetchAndParse();

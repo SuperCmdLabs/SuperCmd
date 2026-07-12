@@ -7,6 +7,7 @@
 
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { attachFormFields } from './form-runtime-fields';
+import { clearFormFieldError, setFormFieldError } from './form-runtime-state';
 import {
   FormContext,
   setCurrentFormErrors,
@@ -65,8 +66,8 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
         return next;
       });
       setErrors((previous) => {
-        const next = { ...previous };
-        delete next[id];
+        const next = clearFormFieldError(previous, id);
+        if (next === previous) return previous;
         setCurrentFormErrors(next);
         return next;
       });
@@ -74,7 +75,8 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
 
     const setError = useCallback((id: string, error: string) => {
       setErrors((previous) => {
-        const next = { ...previous, [id]: error };
+        const next = setFormFieldError(previous, id, error);
+        if (next === previous) return previous;
         setCurrentFormErrors(next);
         return next;
       });

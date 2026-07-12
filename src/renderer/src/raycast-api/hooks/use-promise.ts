@@ -49,6 +49,7 @@ export function usePromise<T>(
   const [error, setError] = useState<Error | undefined>(undefined);
 
   const mountedRef = useRef(true);
+  const latestRunIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortableRefRef = useRef<React.MutableRefObject<AbortController | null | undefined> | undefined>(undefined);
 
@@ -107,8 +108,9 @@ export function usePromise<T>(
     if (opts?.execute === false || !mountedRef.current) return;
 
     const runController = prepareAbortController(opts?.abortable);
+    const runId = ++latestRunIdRef.current;
     const runCtx = runtimeCtxRef.current;
-    const isCurrentRun = () => !runController || abortControllerRef.current === runController;
+    const isCurrentRun = () => latestRunIdRef.current === runId && (!runController || abortControllerRef.current === runController);
 
     setIsLoading(true);
     setError(undefined);

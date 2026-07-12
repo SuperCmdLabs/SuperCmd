@@ -3,7 +3,7 @@ import { Link2 } from 'lucide-react';
 import { renderPhosphorIcon } from '../raycast-api/icon-runtime-phosphor';
 import { RAYCAST_ICON_NAMES, type RaycastIconName } from '../raycast-api/raycast-icon-enum';
 
-type LucideIconComponent = React.ComponentType<{ className?: string; strokeWidth?: number }>;
+type LucideIconComponent = React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
 
 export type QuickLinkIconOption = {
   value: string;
@@ -54,19 +54,18 @@ function buildSearchAliases(iconName: string): string[] {
 }
 
 const rawIconOptions: QuickLinkIconOption[] = (Array.isArray(RAYCAST_ICON_NAMES) ? RAYCAST_ICON_NAMES : [])
-  .map((name) => {
+  .flatMap((name): QuickLinkIconOption[] => {
     const raycastName = String(name || '').trim() as RaycastIconName;
-    if (!raycastName) return null;
+    if (!raycastName) return [];
     const label = buildIconLabel(raycastName);
     const compact = normalizeIconKey(label);
     const aliases = buildSearchAliases(raycastName).join(' ');
-    return {
+    return [{
       value: raycastName,
       label,
       searchText: `${label} ${raycastName} ${compact} ${aliases}`.toLowerCase(),
-    } satisfies QuickLinkIconOption;
+    }];
   })
-  .filter((option): option is QuickLinkIconOption => Boolean(option))
   .sort((a, b) => a.label.localeCompare(b.label));
 
 const canonicalIconValueByNormalized = new Map<string, string>();

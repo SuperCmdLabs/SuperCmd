@@ -354,6 +354,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   const getBookmarkResults = useCallback((rawInput: string, limit = MAX_SCOPED_BOOKMARK_RESULTS): BrowserSearchResult[] => {
     const index = entryIndexRef.current;
     return filterBrowserResultsForKind('bookmark', decorateBrowserResults(getBrowserEntryCandidates('bookmark', rawInput, entriesRef.current, {
+      entryIndex: index,
       preserveBookmarkOrder: !rawInput.trim(),
       limit,
       nicknames: nicknamesRef.current,
@@ -369,6 +370,7 @@ export function useBrowserSearch(_currentQuery: string): UseBrowserSearchResult 
   ): BrowserSearchResult[] => {
     const index = entryIndexRef.current;
     return filterBrowserResultsForKind('history', decorateBrowserResults(getBrowserEntryCandidates('history', rawInput, entriesRef.current, {
+      entryIndex: index,
       preserveHistoryChronology: true,
       includeHistoryTimestamp: true,
       showHistoryProfileContext: showProfileContext,
@@ -667,41 +669,73 @@ type BrowserEntrySearchIndex = {
   searchFields: TokenSearchField[];
 };
 
+type BrowserEntryKindIndex = {
+  tokenPrefixEntryIds: Map<string, number[]>;
+  tokenTrigramEntryIds: Map<string, number[]>;
+};
+
 type BrowserEntryIndex = {
   historyByTimeEntryIds: number[];
   bookmarksByBrowserOrderEntryIds: number[];
+  entrySearchIndexes: Array<BrowserEntrySearchIndex | undefined>;
+  entriesByKind: {
+    history: BrowserEntryKindIndex;
+    bookmark: BrowserEntryKindIndex;
+  };
+  bookmarkEntryIdsByNicknameKey: Map<string, number[]>;
   profileCountsByKind: {
     history: Map<string, number>;
     bookmark: Map<string, number>;
   };
 };
 
+const EMPTY_BROWSER_ENTRY_KIND_INDEX: BrowserEntryKindIndex = {
+  tokenPrefixEntryIds: new Map(),
+  tokenTrigramEntryIds: new Map(),
+};
+
 const EMPTY_BROWSER_ENTRY_INDEX: BrowserEntryIndex = {
   historyByTimeEntryIds: [],
   bookmarksByBrowserOrderEntryIds: [],
+  entrySearchIndexes: [],
+  entriesByKind: {
+    history: EMPTY_BROWSER_ENTRY_KIND_INDEX,
+    bookmark: EMPTY_BROWSER_ENTRY_KIND_INDEX,
+  },
+  bookmarkEntryIdsByNicknameKey: new Map(),
   profileCountsByKind: { history: new Map(), bookmark: new Map() },
 };
 
 const BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH = 128;
 const BROWSER_ENTRY_INDEX_MAX_URL_CHARS = 4096;
+const BROWSER_ENTRY_INDEX_MIN_PREFIX_LENGTH = 2;
 const BROWSER_ENTRY_SEARCH_INDEX_CACHE_MAX = 2_000;
 const browserEntrySearchIndexCache = new Map<string, { fingerprint: string; index: BrowserEntrySearchIndex }>();
 
 function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryIndex {
   const historyByTimeEntryIds: number[] = [];
   const bookmarksByBrowserOrderEntryIds: number[] = [];
+  const entrySearchIndexes: Array<BrowserEntrySearchIndex | undefined> = new Array(entries.length);
+  const historyIndex = createBrowserEntryKindIndex();
+  const bookmarkIndex = createBrowserEntryKindIndex();
+  const bookmarkEntryIdsByNicknameKey = new Map<string, number[]>();
   const historyProfileCounts = new Map<string, number>();
   const bookmarkProfileCounts = new Map<string, number>();
   entries.forEach((entry, entryId) => {
     if (entry.type !== 'url' && entry.type !== 'bookmark') return;
+    const searchIndex = createBrowserEntrySearchIndex(entry);
+    entrySearchIndexes[entryId] = searchIndex;
     if (entry.type === 'url') {
       historyByTimeEntryIds.push(entryId);
+      addBrowserEntryToKindIndex(historyIndex, entryId, searchIndex);
       if (entry.sourceProfileId) {
         const key = getEntryProfileKey(entry);
         historyProfileCounts.set(key, (historyProfileCounts.get(key) || 0) + 1);
       }
     } else {
       bookmarksByBrowserOrderEntryIds.push(entryId);
+      addBrowserEntryToKindIndex(bookmarkIndex, entryId, searchIndex);
+      addBookmarkEntryToNicknameIndex(bookmarkEntryIdsByNicknameKey, entryId, entry);
       if (entry.sourceProfileId) {
         const key = getEntryProfileKey(entry);
         bookmarkProfileCounts.set(key, (bookmarkProfileCounts.get(key) || 0) + 1);
@@ -713,11 +747,88 @@ function buildBrowserEntryIndex(entries: BrowserSearchEntry[]): BrowserEntryInde
   return {
     historyByTimeEntryIds,
     bookmarksByBrowserOrderEntryIds,
+    entrySearchIndexes,
+    entriesByKind: {
+      history: historyIndex,
+      bookmark: bookmarkIndex,
+    },
+    bookmarkEntryIdsByNicknameKey,
     profileCountsByKind: {
       history: historyProfileCounts,
       bookmark: bookmarkProfileCounts,
     },
   };
+}
+
+function createBrowserEntryKindIndex(): BrowserEntryKindIndex {
+  return {
+    tokenPrefixEntryIds: new Map(),
+    tokenTrigramEntryIds: new Map(),
+  };
+}
+
+function addBrowserEntryToKindIndex(
+  kindIndex: BrowserEntryKindIndex,
+  entryId: number,
+  searchIndex: BrowserEntrySearchIndex
+): void {
+  const tokens = getEntryIndexTokens(searchIndex);
+  const prefixes = new Set<string>();
+  const trigrams = new Set<string>();
+  for (const token of tokens) {
+    prefixes.add(token.slice(0, BROWSER_ENTRY_INDEX_MIN_PREFIX_LENGTH));
+    if (token.length >= 3) {
+      for (let index = 0; index <= token.length - 3; index += 1) {
+        trigrams.add(token.slice(index, index + 3));
+      }
+    }
+  }
+  for (const prefix of prefixes) pushEntryId(kindIndex.tokenPrefixEntryIds, prefix, entryId);
+  for (const trigram of trigrams) pushEntryId(kindIndex.tokenTrigramEntryIds, trigram, entryId);
+}
+
+function getEntryIndexTokens(searchIndex: BrowserEntrySearchIndex): string[] {
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const field of searchIndex.searchFields) {
+    const value = field.value || '';
+    if (!value) continue;
+    for (const token of value.split(' ')) {
+      if (token.length < BROWSER_ENTRY_INDEX_MIN_PREFIX_LENGTH || seen.has(token)) continue;
+      seen.add(token);
+      tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
+function pushEntryId(index: Map<string, number[]>, key: string, entryId: number): void {
+  const existing = index.get(key);
+  if (existing) {
+    existing.push(entryId);
+    return;
+  }
+  index.set(key, [entryId]);
+}
+
+function addBookmarkEntryToNicknameIndex(
+  index: Map<string, number[]>,
+  entryId: number,
+  entry: BrowserSearchEntry
+): void {
+  const url = normalizeNicknameUrl(entry.url);
+  if (!url) return;
+  const source = String(entry.source || '');
+  const profileId = String(entry.sourceProfileId || '');
+  const fullProfileId = getEntryProfileKey(entry);
+  pushEntryId(index, getBookmarkNicknameLookupKey(source, profileId, url), entryId);
+  if (fullProfileId !== profileId) {
+    pushEntryId(index, getBookmarkNicknameLookupKey(source, fullProfileId, url), entryId);
+  }
+}
+
+function getBookmarkNicknameLookupKey(source: string, sourceProfileId: string, url: string): string {
+  return [source, sourceProfileId, url].join('\0');
 }
 
 function compareHistoryEntriesByTime(a: BrowserSearchEntry, b: BrowserSearchEntry): number {
@@ -868,14 +979,15 @@ function buildBrowserCandidates(
   options: { limitPerKind?: number } = {}
 ): Record<BrowserSearchResultKind, BrowserSearchResult[]> {
   const openTabs = getOpenTabCandidates(input, tabs);
-  void entryIndex;
   return {
     'open-tab': openTabs,
     bookmark: getBrowserEntryCandidates('bookmark', input, entries, {
+      entryIndex,
       nicknames,
       limit: options.limitPerKind,
     }),
     history: getBrowserEntryCandidates('history', input, entries, {
+      entryIndex,
       limit: options.limitPerKind,
     }),
   };
@@ -886,6 +998,7 @@ function getBrowserEntryCandidates(
   input: string,
   entries: BrowserSearchEntry[],
   options: {
+    entryIndex?: BrowserEntryIndex | null;
     preserveBookmarkOrder?: boolean;
     preserveHistoryChronology?: boolean;
     includeHistoryTimestamp?: boolean;
@@ -912,7 +1025,6 @@ function getBrowserEntryCandidates(
       if (!entry) continue;
       if (entry.type !== entryType) continue;
       if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
-      const index = getBrowserEntrySearchIndex(entry);
       const savedNickname = kind === 'bookmark'
         ? findBookmarkNickname(entry, options.nicknames || [])
         : '';
@@ -948,11 +1060,22 @@ function getBrowserEntryCandidates(
     }
     return results;
   }
-  const candidateEntries = entries;
-  for (const entry of candidateEntries) {
+  const indexedEntryIds = getIndexedEntryCandidateIds(kind, queryTokens, options.entryIndex || null);
+  const nicknameEntryIds = indexedEntryIds !== null
+    ? getBookmarkNicknameCandidateIds(kind, trimmed, options.nicknames || [], options.entryIndex || null)
+    : null;
+  const candidateEntryIds = indexedEntryIds && nicknameEntryIds
+    ? unionSortedEntryIds(indexedEntryIds, nicknameEntryIds)
+    : indexedEntryIds;
+  const scanEntryIds = candidateEntryIds || null;
+  const scanLength = scanEntryIds ? scanEntryIds.length : entries.length;
+  for (let scanIndex = 0; scanIndex < scanLength; scanIndex += 1) {
+    const entryId = scanEntryIds ? scanEntryIds[scanIndex] : scanIndex;
+    const entry = entries[entryId];
+    if (!entry) continue;
     if (entry.type !== entryType) continue;
     if (kind === 'history' && profileFilter && !profileFilter.has(getEntryProfileKey(entry))) continue;
-    const index = getBrowserEntrySearchIndex(entry);
+    const index = getBrowserEntrySearchIndexForEntry(entry, entryId, options.entryIndex || null);
     const savedNickname = kind === 'bookmark'
       ? findBookmarkNickname(entry, options.nicknames || [])
       : '';
@@ -1033,6 +1156,155 @@ function getBrowserEntryCandidates(
     ? results.sort(compareHistoryByTime)
     : results.sort(options.preserveBookmarkOrder ? compareBookmarksByBrowserOrder : compareBrowserResults);
   return options.limit && options.limit > 0 ? sorted.slice(0, options.limit) : sorted;
+}
+
+function getIndexedEntryCandidateIds(
+  kind: 'bookmark' | 'history',
+  queryTokens: string[],
+  entryIndex: BrowserEntryIndex | null
+): number[] | null {
+  if (!entryIndex || queryTokens.length === 0) return null;
+  const kindIndex = entryIndex.entriesByKind[kind];
+  if (!kindIndex) return null;
+
+  const tokenLists: number[][] = [];
+  for (const token of queryTokens) {
+    const tokenEntryIds = getIndexedEntryIdsForToken(kindIndex, token);
+    if (!tokenEntryIds) return null;
+    if (tokenEntryIds.length === 0) return [];
+    tokenLists.push(tokenEntryIds);
+  }
+
+  tokenLists.sort((a, b) => a.length - b.length);
+  let candidateIds = tokenLists[0] || [];
+  for (let index = 1; index < tokenLists.length; index += 1) {
+    candidateIds = intersectSortedEntryIds(candidateIds, tokenLists[index]);
+    if (candidateIds.length === 0) return [];
+  }
+  return candidateIds;
+}
+
+function getBookmarkNicknameCandidateIds(
+  kind: 'bookmark' | 'history',
+  input: string,
+  nicknames: BrowserSearchNicknameSetting[],
+  entryIndex: BrowserEntryIndex | null
+): number[] | null {
+  if (kind !== 'bookmark' || !entryIndex || nicknames.length === 0 || /\s/.test(input)) return null;
+  const parsed = parseNicknameQuery(input);
+  const normalizedToken = normalizeNicknameToken(parsed.firstToken);
+  if (!normalizedToken) return null;
+  let candidateIds: number[] = [];
+  for (const item of nicknames) {
+    const nickname = normalizeNicknameToken(item.nickname);
+    if (!nickname || !nickname.startsWith(normalizedToken)) continue;
+    const key = getBookmarkNicknameLookupKey(
+      String(item.source || ''),
+      String(item.sourceProfileId || ''),
+      normalizeNicknameUrl(item.url)
+    );
+    const entryIds = entryIndex.bookmarkEntryIdsByNicknameKey.get(key);
+    if (entryIds?.length) candidateIds = unionSortedEntryIds(candidateIds, entryIds);
+  }
+  return candidateIds;
+}
+
+function getIndexedEntryIdsForToken(
+  kindIndex: BrowserEntryKindIndex,
+  token: string
+): number[] | null {
+  if (token.length < BROWSER_ENTRY_INDEX_MIN_PREFIX_LENGTH) return null;
+  if (token.length === BROWSER_ENTRY_INDEX_MIN_PREFIX_LENGTH) {
+    return kindIndex.tokenPrefixEntryIds.get(token) || [];
+  }
+  const trigrams = getTokenTrigrams(token);
+  if (trigrams.length === 0) return null;
+  const gramLists: number[][] = [];
+  for (const trigram of trigrams) {
+    const ids = kindIndex.tokenTrigramEntryIds.get(trigram) || [];
+    if (ids.length === 0) return [];
+    gramLists.push(ids);
+  }
+  gramLists.sort((a, b) => a.length - b.length);
+  let candidateIds = gramLists[0] || [];
+  for (let index = 1; index < gramLists.length; index += 1) {
+    candidateIds = intersectSortedEntryIds(candidateIds, gramLists[index]);
+    if (candidateIds.length === 0) return [];
+  }
+  return candidateIds;
+}
+
+function getTokenTrigrams(token: string): string[] {
+  if (token.length < 3) return [];
+  const seen = new Set<string>();
+  const trigrams: string[] = [];
+  for (let index = 0; index <= token.length - 3; index += 1) {
+    const trigram = token.slice(index, index + 3);
+    if (seen.has(trigram)) continue;
+    seen.add(trigram);
+    trigrams.push(trigram);
+  }
+  return trigrams;
+}
+
+function intersectSortedEntryIds(a: number[], b: number[]): number[] {
+  const out: number[] = [];
+  let aIndex = 0;
+  let bIndex = 0;
+  while (aIndex < a.length && bIndex < b.length) {
+    const aValue = a[aIndex];
+    const bValue = b[bIndex];
+    if (aValue === bValue) {
+      out.push(aValue);
+      aIndex += 1;
+      bIndex += 1;
+    } else if (aValue < bValue) {
+      aIndex += 1;
+    } else {
+      bIndex += 1;
+    }
+  }
+  return out;
+}
+
+function unionSortedEntryIds(a: number[], b: number[]): number[] {
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  const out: number[] = [];
+  let aIndex = 0;
+  let bIndex = 0;
+  while (aIndex < a.length && bIndex < b.length) {
+    const aValue = a[aIndex];
+    const bValue = b[bIndex];
+    if (aValue === bValue) {
+      out.push(aValue);
+      aIndex += 1;
+      bIndex += 1;
+    } else if (aValue < bValue) {
+      out.push(aValue);
+      aIndex += 1;
+    } else {
+      out.push(bValue);
+      bIndex += 1;
+    }
+  }
+  while (aIndex < a.length) {
+    out.push(a[aIndex]);
+    aIndex += 1;
+  }
+  while (bIndex < b.length) {
+    out.push(b[bIndex]);
+    bIndex += 1;
+  }
+  return out;
+}
+
+function getBrowserEntrySearchIndexForEntry(
+  entry: BrowserSearchEntry,
+  entryId: number,
+  entryIndex: BrowserEntryIndex | null
+): BrowserEntrySearchIndex {
+  return entryIndex?.entrySearchIndexes[entryId] || getBrowserEntrySearchIndex(entry);
 }
 
 function compareBookmarksByBrowserOrder(a: BrowserSearchResult, b: BrowserSearchResult): number {
@@ -1338,6 +1610,16 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
     browserEntrySearchIndexCache.set(cacheKey, cached);
     return cached.index;
   }
+  const index = createBrowserEntrySearchIndex(entry);
+  browserEntrySearchIndexCache.set(cacheKey, { fingerprint, index });
+  if (browserEntrySearchIndexCache.size > BROWSER_ENTRY_SEARCH_INDEX_CACHE_MAX) {
+    const oldestKey = browserEntrySearchIndexCache.keys().next().value;
+    if (oldestKey !== undefined) browserEntrySearchIndexCache.delete(oldestKey);
+  }
+  return index;
+}
+
+function createBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySearchIndex {
   const searchFields: TokenSearchField[] = [
     { value: normalizeForTokenSearch(entry.query), weight: 1.15 },
     { value: normalizeForTokenSearch(entry.url, BROWSER_ENTRY_INDEX_MAX_URL_CHARS), weight: 1 },
@@ -1351,11 +1633,6 @@ function getBrowserEntrySearchIndex(entry: BrowserSearchEntry): BrowserEntrySear
     normalizedUrl: normalizeUrlForCompletion(entry.url || entry.host, BROWSER_ENTRY_INDEX_MAX_URL_CHARS),
     searchFields,
   };
-  browserEntrySearchIndexCache.set(cacheKey, { fingerprint, index });
-  if (browserEntrySearchIndexCache.size > BROWSER_ENTRY_SEARCH_INDEX_CACHE_MAX) {
-    const oldestKey = browserEntrySearchIndexCache.keys().next().value;
-    if (oldestKey !== undefined) browserEntrySearchIndexCache.delete(oldestKey);
-  }
   return index;
 }
 
@@ -1572,3 +1849,9 @@ function tabToBrowserSearchEntry(tab: BrowserTabEntry): BrowserSearchEntry {
     sourceProfileName: tab.profileName,
   };
 }
+
+export const __browserSearchTestAccess = {
+  buildBrowserEntryIndex,
+  getOrderedBrowserResults,
+  getRankedBrowserResults,
+};

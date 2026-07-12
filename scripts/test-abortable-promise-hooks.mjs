@@ -376,3 +376,173 @@ test('useCachedPromise keeps the latest abortable result when an older aborted r
 
   host.unmount();
 });
+
+test('usePromise keeps the latest default result when an older run resolves later', async () => {
+  const pending = [];
+  const onDataCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => usePromise(fn, [], { onData: (data) => onDataCalls.push(data) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  pending[0].resolve('stale');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  host.unmount();
+});
+
+test('useCachedPromise keeps the latest default result when an older run resolves later', async () => {
+  const pending = [];
+  const onDataCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => useCachedPromise(fn, [], { onData: (data) => onDataCalls.push(data) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  pending[0].resolve('stale');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  host.unmount();
+});
+
+test('usePromise ignores stale default results while a newer run is still loading', async () => {
+  const pending = [];
+  const onDataCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => usePromise(fn, [], { onData: (data) => onDataCalls.push(data) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[0].resolve('stale');
+  await flushAsync();
+  assert.equal(host.output.data, undefined);
+  assert.equal(host.output.isLoading, true);
+  assert.deepEqual(onDataCalls, []);
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.equal(host.output.isLoading, false);
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  host.unmount();
+});
+
+test('useCachedPromise ignores stale default results while a newer run is still loading', async () => {
+  const pending = [];
+  const onDataCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => useCachedPromise(fn, [], { onData: (data) => onDataCalls.push(data) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[0].resolve('stale');
+  await flushAsync();
+  assert.equal(host.output.data, undefined);
+  assert.equal(host.output.isLoading, true);
+  assert.deepEqual(onDataCalls, []);
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  assert.equal(host.output.data, 'latest');
+  assert.equal(host.output.isLoading, false);
+  assert.deepEqual(onDataCalls, ['latest']);
+
+  host.unmount();
+});
+
+test('usePromise ignores stale default errors after a newer run resolves', async () => {
+  const pending = [];
+  const onErrorCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => usePromise(fn, [], { onError: (error) => onErrorCalls.push(error.message) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  pending[0].reject(new Error('stale failure'));
+  await flushAsync();
+
+  assert.equal(host.output.data, 'latest');
+  assert.equal(host.output.error, undefined);
+  assert.deepEqual(onErrorCalls, []);
+
+  host.unmount();
+});
+
+test('useCachedPromise ignores stale default errors after a newer run resolves', async () => {
+  const pending = [];
+  const onErrorCalls = [];
+  const fn = () => {
+    const run = deferred();
+    pending.push(run);
+    return run.promise;
+  };
+  const host = new HookHost(() => useCachedPromise(fn, [], { onError: (error) => onErrorCalls.push(error.message) }));
+
+  host.render();
+  await flushAsync();
+  host.output.revalidate();
+  await flushAsync();
+
+  pending[1].resolve('latest');
+  await flushAsync();
+  pending[0].reject(new Error('stale failure'));
+  await flushAsync();
+
+  assert.equal(host.output.data, 'latest');
+  assert.equal(host.output.error, undefined);
+  assert.deepEqual(onErrorCalls, []);
+
+  host.unmount();
+});

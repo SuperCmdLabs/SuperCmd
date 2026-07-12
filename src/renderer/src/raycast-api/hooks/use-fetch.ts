@@ -46,10 +46,15 @@ export function useFetch<T = any, U = undefined>(
   const [error, setError] = useState<Error | undefined>(undefined);
 
   const mountedRef = useRef(true);
+  const runIdRef = useRef(0);
+  const lastInitialRequestKeyRef = useRef<string | undefined>(undefined);
+  const lastInitialOptionsKeyRef = useRef<string | undefined>(undefined);
+  const pendingHookStateRenderRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      runIdRef.current += 1;
     };
   }, []);
 
@@ -58,17 +63,40 @@ export function useFetch<T = any, U = undefined>(
   urlRef.current = url;
   optionsRef.current = options;
 
-  const fetchData = useCallback(async (pageNum: number, currentCursor?: string) => {
+  const setHookState = useCallback(<V,>(
+    setter: (nextValue: V | ((previous: V) => V)) => void,
+    nextValue: V | ((previous: V) => V),
+  ) => {
+    setter((previous: V) => {
+      const next = typeof nextValue === 'function'
+        ? (nextValue as (value: V) => V)(previous)
+        : nextValue;
+      if (Object.is(previous, next)) return previous;
+      pendingHookStateRenderRef.current = true;
+      return next;
+    });
+  }, []);
+
+  const resolveUrl = useCallback((
+    requestUrl: typeof url,
+    pageNum: number,
+    currentCursor?: string,
+  ) => typeof requestUrl === 'function'
+    ? requestUrl({ page: pageNum, cursor: currentCursor, lastItem: undefined })
+    : requestUrl, []);
+
+  const fetchData = useCallback(async (pageNum: number, currentCursor?: string, resolvedUrlOverride?: string) => {
     const opts = optionsRef.current;
     if (opts?.execute === false || !mountedRef.current) return;
 
-    setIsLoading(true);
-    setError(undefined);
+    const runId = ++runIdRef.current;
+    const isCurrentRun = () => mountedRef.current && runIdRef.current === runId;
+
+    setHookState(setIsLoading, true);
+    setHookState(setError, undefined);
 
     try {
-      const resolvedUrl = typeof urlRef.current === 'function'
-        ? urlRef.current({ page: pageNum, cursor: currentCursor, lastItem: undefined })
-        : urlRef.current;
+      const resolvedUrl = resolvedUrlOverride ?? resolveUrl(urlRef.current, pageNum, currentCursor);
 
       const ipcRes = await window.electron.httpRequest({
         url: resolvedUrl,
@@ -76,6 +104,7 @@ export function useFetch<T = any, U = undefined>(
         headers: opts?.headers,
         body: normalizeRequestBody(opts?.body) as string | undefined,
       });
+      if (!isCurrentRun()) return;
 
       const res = {
         ok: ipcRes.status >= 200 && ipcRes.status < 300,
@@ -90,15 +119,16 @@ export function useFetch<T = any, U = undefined>(
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const parsed = opts?.parseResponse ? await opts.parseResponse(res) : await res.json();
-      if (!mountedRef.current) return;
+      if (!isCurrentRun()) return;
 
       const mapped = opts?.mapResult ? opts.mapResult(parsed) : parsed;
+      if (!isCurrentRun()) return;
       if (mapped && typeof mapped === 'object' && 'data' in mapped) {
         const paginatedResult = mapped as { data: T; hasMore?: boolean; cursor?: string };
-        setHasMore(paginatedResult.hasMore ?? false);
-        setCursor(paginatedResult.cursor);
+        setHookState(setHasMore, paginatedResult.hasMore ?? false);
+        setHookState(setCursor, paginatedResult.cursor);
 
-        setAllData((prev) => {
+        setHookState(setAllData, (prev) => {
           if (pageNum === 0) return paginatedResult.data;
           if (Array.isArray(paginatedResult.data) && Array.isArray(prev)) {
             return [...prev, ...paginatedResult.data] as unknown as T;
@@ -107,21 +137,20 @@ export function useFetch<T = any, U = undefined>(
         });
         opts?.onData?.(paginatedResult.data);
       } else {
-        setAllData(mapped as T);
-        setHasMore(false);
+        setHookState(setAllData, mapped as T);
+        setHookState(setHasMore, false);
         opts?.onData?.(mapped as T);
       }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!isCurrentRun()) return;
       const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
+      setHookState(setError, e);
       opts?.onError?.(e);
     } finally {
-      if (mountedRef.current) setIsLoading(false);
+      if (isCurrentRun()) setHookState(setIsLoading, false);
     }
-  }, []);
+  }, [resolveUrl, setHookState]);
 
-  const urlString = typeof url === 'string' ? url : 'function';
   const optionsKey = useMemo(() => {
     try {
       return JSON.stringify({
@@ -136,44 +165,73 @@ export function useFetch<T = any, U = undefined>(
   }, [options?.execute, options?.method, options?.headers, options?.body]);
 
   useEffect(() => {
-    if (options?.execute === false) {
-      setIsLoading(false);
-      setError(undefined);
-      setAllData(options?.initialData);
+    const isHookStateRender = pendingHookStateRenderRef.current;
+    pendingHookStateRenderRef.current = false;
+    const previousOptionsKey = lastInitialOptionsKeyRef.current;
+    lastInitialOptionsKeyRef.current = optionsKey;
+    if (
+      isHookStateRender &&
+      typeof url === 'function' &&
+      lastInitialRequestKeyRef.current !== undefined &&
+      previousOptionsKey === optionsKey
+    ) {
       return;
     }
-    setPage(0);
-    setCursor(undefined);
-    setAllData(options?.initialData);
-    fetchData(0, undefined);
-  }, [fetchData, urlString, optionsKey]);
+
+    if (options?.execute === false) {
+      runIdRef.current += 1;
+      lastInitialRequestKeyRef.current = undefined;
+      setHookState(setIsLoading, false);
+      setHookState(setError, undefined);
+      setHookState(setAllData, options?.initialData);
+      return;
+    }
+
+    let initialResolvedUrl: string | undefined;
+    let initialUrlKey: string;
+    try {
+      initialResolvedUrl = resolveUrl(url, 0, undefined);
+      initialUrlKey = initialResolvedUrl;
+    } catch (err) {
+      initialUrlKey = `error:${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    const initialRequestKey = `${optionsKey}\n${initialUrlKey}`;
+    if (lastInitialRequestKeyRef.current === initialRequestKey) return;
+    lastInitialRequestKeyRef.current = initialRequestKey;
+
+    setHookState(setPage, 0);
+    setHookState(setCursor, undefined);
+    setHookState(setAllData, options?.initialData);
+    fetchData(0, undefined, initialResolvedUrl);
+  }, [fetchData, url, optionsKey, setHookState]);
 
   const revalidate = useCallback(() => {
-    setPage(0);
-    setCursor(undefined);
-    setAllData(undefined);
+    setHookState(setPage, 0);
+    setHookState(setCursor, undefined);
+    setHookState(setAllData, undefined);
     fetchData(0, undefined);
-  }, [fetchData]);
+  }, [fetchData, setHookState]);
 
   const mutate = useCallback(async (asyncUpdate?: Promise<T>, mutateOptions?: { optimisticUpdate?: (data: T | undefined) => T; rollbackOnError?: boolean | ((data: T | undefined) => T); shouldRevalidateAfter?: boolean }) => {
     const prevData = allData;
     if (mutateOptions?.optimisticUpdate) {
-      setAllData(mutateOptions.optimisticUpdate(allData));
+      setHookState(setAllData, mutateOptions.optimisticUpdate(allData));
     }
 
     if (asyncUpdate) {
       try {
         const result = await asyncUpdate;
         if (mutateOptions?.shouldRevalidateAfter !== false) {
-          setAllData(result);
+          setHookState(setAllData, result);
         }
         return result;
       } catch (e) {
         if (mutateOptions?.rollbackOnError !== false) {
           if (typeof mutateOptions?.rollbackOnError === 'function') {
-            setAllData(mutateOptions.rollbackOnError(prevData));
+            setHookState(setAllData, mutateOptions.rollbackOnError(prevData));
           } else {
-            setAllData(prevData);
+            setHookState(setAllData, prevData);
           }
         }
         throw e;
@@ -187,10 +245,10 @@ export function useFetch<T = any, U = undefined>(
   const onLoadMore = useCallback(() => {
     if (hasMore && !isLoading) {
       const nextPage = page + 1;
-      setPage(nextPage);
+      setHookState(setPage, nextPage);
       fetchData(nextPage, cursor);
     }
-  }, [hasMore, isLoading, page, cursor, fetchData]);
+  }, [hasMore, isLoading, page, cursor, fetchData, setHookState]);
 
   const pagination = useMemo(() => ({
     page,

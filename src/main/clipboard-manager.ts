@@ -11,6 +11,7 @@
 import { app, clipboard, nativeImage } from 'electron';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
@@ -87,6 +88,7 @@ export interface ClipboardItem {
 
 const MAX_ITEMS = 1000;
 const POLL_INTERVAL = 1000; // 1 second
+const HISTORY_SAVE_DEBOUNCE_MS = 250;
 const MAX_TEXT_LENGTH = 100_000; // Don't store huge text items
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB max per image
 const INTERNAL_CLIPBOARD_PROBE_REGEX = /^__supercmd_[a-z0-9_]+_probe__\d+_[a-z0-9]+$/i;
@@ -174,6 +176,11 @@ function ensurePinnedOrder(): void {
 
 // ─── Persistence ────────────────────────────────────────────────────
 
+let historySaveTimer: NodeJS.Timeout | null = null;
+let historySaveDirty = false;
+let historySaveFlushPromise: Promise<void> | null = null;
+let historyWriteInFlight: Promise<void> | null = null;
+
 function loadHistory(): void {
   try {
     const historyPath = getHistoryFilePath();
@@ -215,13 +222,96 @@ function loadHistory(): void {
   }
 }
 
-function saveHistory(): void {
+function getHistoryTempFilePath(historyPath: string): string {
+  return `${historyPath}.${process.pid}.${Date.now()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+}
+
+async function writeHistoryFileAtomic(serializedHistory: string): Promise<void> {
+  const historyPath = getHistoryFilePath();
+  const tempPath = getHistoryTempFilePath(historyPath);
+
   try {
-    const historyPath = getHistoryFilePath();
-    fs.writeFileSync(historyPath, JSON.stringify(clipboardHistory, null, 2));
+    await fsp.mkdir(path.dirname(historyPath), { recursive: true });
+    await fsp.writeFile(tempPath, serializedHistory, 'utf-8');
+    await fsp.rename(tempPath, historyPath);
   } catch (e) {
-    console.error('Failed to save clipboard history:', e);
+    try {
+      await fsp.unlink(tempPath);
+    } catch {}
+    throw e;
   }
+}
+
+function clearHistorySaveTimer(): void {
+  if (historySaveTimer) {
+    clearTimeout(historySaveTimer);
+    historySaveTimer = null;
+  }
+}
+
+async function drainHistorySaveQueue(): Promise<void> {
+  clearHistorySaveTimer();
+
+  if (historyWriteInFlight) {
+    await historyWriteInFlight;
+  }
+
+  while (historySaveDirty) {
+    clearHistorySaveTimer();
+    historySaveDirty = false;
+    const serializedHistory = JSON.stringify(clipboardHistory, null, 2);
+    const writePromise = writeHistoryFileAtomic(serializedHistory);
+    historyWriteInFlight = writePromise;
+    try {
+      await writePromise;
+    } catch (e) {
+      historySaveDirty = true;
+      throw e;
+    } finally {
+      if (historyWriteInFlight === writePromise) {
+        historyWriteInFlight = null;
+      }
+    }
+  }
+}
+
+export function hasPendingClipboardHistoryWrites(): boolean {
+  return Boolean(historySaveTimer || historySaveDirty || historyWriteInFlight || historySaveFlushPromise);
+}
+
+export function flushClipboardHistoryWrites(): Promise<void> {
+  clearHistorySaveTimer();
+
+  if (!hasPendingClipboardHistoryWrites()) {
+    return Promise.resolve();
+  }
+
+  if (!historySaveFlushPromise) {
+    historySaveFlushPromise = drainHistorySaveQueue()
+      .catch((e) => {
+        console.error('Failed to save clipboard history:', e);
+      })
+      .finally(() => {
+        historySaveFlushPromise = null;
+      });
+  }
+
+  return historySaveFlushPromise;
+}
+
+function saveHistory(options: { flush?: boolean } = {}): void {
+  historySaveDirty = true;
+
+  if (options.flush) {
+    void flushClipboardHistoryWrites();
+    return;
+  }
+
+  clearHistorySaveTimer();
+  historySaveTimer = setTimeout(() => {
+    historySaveTimer = null;
+    void flushClipboardHistoryWrites();
+  }, HISTORY_SAVE_DEBOUNCE_MS);
 }
 
 // ─── Clipboard Monitoring ───────────────────────────────────────────
@@ -888,11 +978,12 @@ export function startClipboardMonitor(): void {
   console.log('Clipboard monitor started');
 }
 
-export function stopClipboardMonitor(): void {
+export async function stopClipboardMonitor(): Promise<void> {
   if (pollInterval) {
     clearInterval(pollInterval);
     pollInterval = null;
   }
+  await flushClipboardHistoryWrites();
   console.log('Clipboard monitor stopped');
 }
 
@@ -929,13 +1020,13 @@ export function pruneClipboardHistoryOlderThan(retentionDays: number | null | un
   const removed = before - kept.length;
   if (removed > 0) {
     clipboardHistory = kept;
-    saveHistory();
+    saveHistory({ flush: true });
     console.log(`Pruned ${removed} clipboard item${removed === 1 ? '' : 's'} older than ${days} day${days === 1 ? '' : 's'}`);
   }
   return removed;
 }
 
-export function clearClipboardHistory(): void {
+export async function clearClipboardHistory(): Promise<void> {
   // Delete all image files
   for (const item of clipboardHistory) {
     if (item.type === 'image' && fs.existsSync(item.content)) {
@@ -946,11 +1037,12 @@ export function clearClipboardHistory(): void {
   }
   
   clipboardHistory = [];
-  saveHistory();
+  saveHistory({ flush: true });
+  await flushClipboardHistoryWrites();
   console.log('Clipboard history cleared');
 }
 
-export function deleteClipboardItem(id: string): boolean {
+export async function deleteClipboardItem(id: string): Promise<boolean> {
   const index = clipboardHistory.findIndex((item) => item.id === id);
   if (index === -1) return false;
   
@@ -964,7 +1056,8 @@ export function deleteClipboardItem(id: string): boolean {
   }
   
   clipboardHistory.splice(index, 1);
-  saveHistory();
+  saveHistory({ flush: true });
+  await flushClipboardHistoryWrites();
   
   return true;
 }
@@ -1132,7 +1225,7 @@ export function setClipboardMonitorEnabled(enabled: boolean): void {
   if (enabled && !pollInterval) {
     startClipboardMonitor();
   } else if (!enabled && pollInterval) {
-    stopClipboardMonitor();
+    void stopClipboardMonitor();
   }
 }
 

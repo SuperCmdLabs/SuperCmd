@@ -47,6 +47,7 @@ export function useCachedPromise<T>(
   const [isPaginated, setIsPaginated] = useState(false);
 
   const mountedRef = useRef(true);
+  const latestRunIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortableRefRef = useRef<React.MutableRefObject<AbortController | null | undefined> | undefined>(undefined);
   const fnRef = useRef(fn);
@@ -102,8 +103,9 @@ export function useCachedPromise<T>(
     if (opts?.execute === false || !mountedRef.current) return;
 
     const runController = prepareAbortController(opts?.abortable);
+    const runId = ++latestRunIdRef.current;
     const runCtx = runtimeCtxRef.current;
-    const isCurrentRun = () => !runController || abortControllerRef.current === runController;
+    const isCurrentRun = () => latestRunIdRef.current === runId && (!runController || abortControllerRef.current === runController);
 
     setIsLoading(true);
     setError(undefined);
@@ -129,7 +131,7 @@ export function useCachedPromise<T>(
           if (pageNum === 0) {
             setAccumulatedData(Array.isArray(pageData) ? pageData : []);
           } else {
-            setAccumulatedData((prev: any) => {
+            setAccumulatedData((prev: unknown) => {
               const prevArr = Array.isArray(prev) ? prev : [];
               const newArr = Array.isArray(pageData) ? pageData : [];
               return [...prevArr, ...newArr];
@@ -156,7 +158,7 @@ export function useCachedPromise<T>(
           if (pageNum === 0) {
             setAccumulatedData(Array.isArray(pageData) ? pageData : []);
           } else {
-            setAccumulatedData((prev: any) => {
+            setAccumulatedData((prev: unknown) => {
               const prevArr = Array.isArray(prev) ? prev : [];
               const newArr = Array.isArray(pageData) ? pageData : [];
               return [...prevArr, ...newArr];

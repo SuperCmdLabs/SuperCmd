@@ -16,6 +16,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { NO_AI_MODEL_ERROR } from '../utils/constants';
+import {
+  createCursorPromptResultBatcher,
+  type CursorPromptResultBatcher,
+} from './cursorPromptResultBatcher';
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 
@@ -53,7 +57,7 @@ export function useCursorPrompt({
 }: UseCursorPromptOptions): UseCursorPromptReturn {
   const [cursorPromptText, setCursorPromptText] = useState('');
   const [cursorPromptStatus, setCursorPromptStatus] = useState<'idle' | 'processing' | 'ready' | 'error'>('idle');
-  const [cursorPromptResult, setCursorPromptResult] = useState('');
+  const [cursorPromptResult, setCursorPromptResultState] = useState('');
   const [cursorPromptError, setCursorPromptError] = useState('');
   const [cursorPromptSourceText, setCursorPromptSourceText] = useState('');
 
@@ -61,6 +65,18 @@ export function useCursorPrompt({
   const cursorPromptResultRef = useRef('');
   const cursorPromptSourceTextRef = useRef('');
   const cursorPromptInputRef = useRef<HTMLTextAreaElement>(null);
+  const cursorPromptResultBatcherRef = useRef<CursorPromptResultBatcher | null>(null);
+
+  if (!cursorPromptResultBatcherRef.current) {
+    cursorPromptResultBatcherRef.current = createCursorPromptResultBatcher({
+      resultRef: cursorPromptResultRef,
+      setVisibleResult: setCursorPromptResultState,
+    });
+  }
+
+  const setCursorPromptResult = useCallback((value: string) => {
+    cursorPromptResultBatcherRef.current?.reset(value);
+  }, []);
 
   // ── Apply result to the editor ──────────────────────────────────
 
@@ -89,18 +105,19 @@ export function useCursorPrompt({
   useEffect(() => {
     const handleChunk = (data: { requestId: string; chunk: string }) => {
       if (data.requestId === cursorPromptRequestIdRef.current) {
-        cursorPromptResultRef.current += data.chunk;
-        setCursorPromptResult((prev) => prev + data.chunk);
+        cursorPromptResultBatcherRef.current?.appendChunk(data.chunk);
       }
     };
     const handleDone = (data: { requestId: string }) => {
       if (data.requestId === cursorPromptRequestIdRef.current) {
+        cursorPromptResultBatcherRef.current?.flush();
         cursorPromptRequestIdRef.current = null;
         void applyCursorPromptResultToEditor();
       }
     };
     const handleError = (data: { requestId: string; error: string }) => {
       if (data.requestId === cursorPromptRequestIdRef.current) {
+        cursorPromptResultBatcherRef.current?.flush();
         cursorPromptRequestIdRef.current = null;
         setCursorPromptStatus('error');
         setCursorPromptError(data.error || 'Failed to process this prompt.');
@@ -117,6 +134,12 @@ export function useCursorPrompt({
       removeError?.();
     };
   }, [applyCursorPromptResultToEditor]);
+
+  useEffect(() => {
+    return () => {
+      cursorPromptResultBatcherRef.current?.dispose();
+    };
+  }, []);
 
   // ── Focus cursor prompt input when shown ────────────────────────
 
@@ -203,7 +226,7 @@ export function useCursorPrompt({
           `Instruction: ${instruction}`,
         ].join('\n');
     await window.electron.aiAsk(requestId, compositePrompt);
-  }, [cursorPromptStatus, cursorPromptText, setAiAvailable]);
+  }, [cursorPromptStatus, cursorPromptText, setAiAvailable, setCursorPromptResult]);
 
   const closeCursorPrompt = useCallback(async () => {
     if (cursorPromptRequestIdRef.current) {
@@ -212,6 +235,7 @@ export function useCursorPrompt({
       } catch {}
       cursorPromptRequestIdRef.current = null;
     }
+    cursorPromptResultBatcherRef.current?.cancelPendingFlush();
     setShowCursorPrompt(false);
     window.electron.hideWindow();
   }, [setShowCursorPrompt]);
@@ -223,7 +247,8 @@ export function useCursorPrompt({
     setCursorPromptError('');
     setCursorPromptSourceText('');
     cursorPromptRequestIdRef.current = null;
-  }, []);
+    cursorPromptSourceTextRef.current = '';
+  }, [setCursorPromptResult]);
 
   return {
     cursorPromptText,

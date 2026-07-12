@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
+import { createAerospaceWorkspaceMover } from './aerospace-workspace';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
 import {
@@ -100,6 +101,8 @@ import {
   togglePinClipboardItem,
   moveClipboardPinnedItem,
   pruneClipboardHistoryOlderThan,
+  flushClipboardHistoryWrites,
+  hasPendingClipboardHistoryWrites,
 } from './clipboard-manager';
 import {
   initSnippetStore,
@@ -193,6 +196,8 @@ import {
   exportNoteToFile,
   exportNotesToFile,
   importNotesFromFile,
+  flushNotesToDisk,
+  hasPendingNotesSave,
 } from './notes-store';
 import {
   initCanvasStore,
@@ -3198,48 +3203,12 @@ function setLauncherOverlayTopmost(enabled: boolean): void {
  * This is fire-and-forget — failures are silently ignored so we never
  * block or delay the launcher for users who don't use AeroSpace.
  */
-let aerospaceAvailable: boolean | null = null; // null = not yet checked
+const aerospaceWorkspaceMover = createAerospaceWorkspaceMover({
+  shouldRun: () => !!mainWindow && !mainWindow.isDestroyed(),
+});
+
 function moveWindowToCurrentAerospaceWorkspace(): void {
-  if (aerospaceAvailable === false || process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
-  try {
-    const { execFileSync } = require('child_process');
-    // Quick check: is AeroSpace running?  list-workspaces --focused
-    // exits 0 only when the server is up.
-    const focusedWs = String(
-      execFileSync('aerospace', ['list-workspaces', '--focused'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!focusedWs) return;
-    aerospaceAvailable = true;
-
-    // Find our window(s) by bundle-id
-    const windowsRaw = String(
-      execFileSync('aerospace', ['list-windows', '--all', '--app-bundle-id', 'com.supercmd.app', '--format', '%{window-id} %{workspace}'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!windowsRaw) return;
-
-    for (const line of windowsRaw.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const [windowId, currentWs] = parts;
-      if (currentWs === focusedWs) continue; // already on the right workspace
-      execFileSync('aerospace', ['move-node-to-workspace', focusedWs, '--window-id', windowId], {
-        timeout: 500,
-        stdio: 'ignore',
-      });
-    }
-  } catch (err: any) {
-    // ENOENT = `aerospace` binary not found — will never appear, so skip future calls.
-    if (err?.code === 'ENOENT') {
-      aerospaceAvailable = false;
-    }
-    // Other errors (server not running, command failed) are transient — retry next time.
-  }
+  aerospaceWorkspaceMover.requestMove();
 }
 
 function clearOAuthBlurHideSuppression(): void {
@@ -10245,6 +10214,7 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
         '-O', '-o', binaryPath,
         path.join(nativeDir, 'emoji-trigger-monitor.swift'),
         path.join(nativeDir, 'ax-caret-query.swift'),
+        path.join(nativeDir, 'emoji-caret-session-cache.swift'),
         '-framework', 'AppKit',
         '-framework', 'ApplicationServices',
       ]);
@@ -13316,19 +13286,23 @@ async function restartAndInstallAppUpdate(): Promise<boolean> {
       });
 
       triggerTimer = setTimeout(() => {
-        try {
-          if (process.platform === 'darwin') {
-            try {
-              appUpdater.autoInstallOnAppQuit = true;
-              appUpdater.autoRunAppAfterInstall = true;
-            } catch {}
-            appUpdater.quitAndInstall();
-          } else {
-            appUpdater.quitAndInstall(false, true);
+        void (async () => {
+          try {
+            await flushNotesToDisk();
+            await flushClipboardHistoryWrites();
+            if (process.platform === 'darwin') {
+              try {
+                appUpdater.autoInstallOnAppQuit = true;
+                appUpdater.autoRunAppAfterInstall = true;
+              } catch {}
+              appUpdater.quitAndInstall();
+            } else {
+              appUpdater.quitAndInstall(false, true);
+            }
+          } catch (error: any) {
+            finish(false, error);
           }
-        } catch (error: any) {
-          finish(false, error);
-        }
+        })();
       }, 40);
 
       timeoutTimer = setTimeout(() => {
@@ -16450,12 +16424,12 @@ return appURL's |path|() as text`,
     return searchClipboardHistory(query);
   });
 
-  ipcMain.handle('clipboard-clear-history', () => {
-    clearClipboardHistory();
+  ipcMain.handle('clipboard-clear-history', async () => {
+    await clearClipboardHistory();
   });
 
-  ipcMain.handle('clipboard-delete-item', (_event: any, id: string) => {
-    return deleteClipboardItem(id);
+  ipcMain.handle('clipboard-delete-item', async (_event: any, id: string) => {
+    return await deleteClipboardItem(id);
   });
 
   ipcMain.handle('clipboard-copy-item', (_event: any, id: string) => {
@@ -19343,8 +19317,42 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let pendingAsyncStorageQuitFlushComplete = false;
+let pendingAsyncStorageQuitFlushInProgress = false;
+
+app.on('before-quit', (event: any) => {
   prepareWindowsForAppQuit();
+
+  const updateRestartInProgress = Boolean(appUpdaterRestartPromise) || appUpdaterStatusSnapshot.state === 'restarting';
+  const shouldFlushNotes = hasPendingNotesSave();
+  const shouldFlushClipboard = !updateRestartInProgress && hasPendingClipboardHistoryWrites();
+
+  if (
+    pendingAsyncStorageQuitFlushComplete ||
+    pendingAsyncStorageQuitFlushInProgress ||
+    (!shouldFlushNotes && !shouldFlushClipboard)
+  ) {
+    return;
+  }
+
+  pendingAsyncStorageQuitFlushInProgress = true;
+  event.preventDefault();
+  Promise.all([
+    shouldFlushNotes
+      ? flushNotesToDisk().catch((error) => {
+          console.error('[Notes] Failed to flush pending saves before quit:', error);
+        })
+      : Promise.resolve(),
+    shouldFlushClipboard
+      ? flushClipboardHistoryWrites().catch((error) => {
+          console.error('Failed to flush clipboard history before quit:', error);
+        })
+      : Promise.resolve(),
+  ]).finally(() => {
+    pendingAsyncStorageQuitFlushComplete = true;
+    pendingAsyncStorageQuitFlushInProgress = false;
+    app.quit();
+  });
 });
 
 app.on('will-quit', () => {
@@ -19370,7 +19378,7 @@ app.on('will-quit', () => {
   killParakeetServer();
   killQwen3Server();
   killAudioCapturer();
-  stopClipboardMonitor();
+  void stopClipboardMonitor();
   stopSnippetExpander();
   stopEmojiTriggerMonitor();
   stopFileSearchIndexing();
