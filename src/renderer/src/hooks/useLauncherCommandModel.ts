@@ -9,7 +9,11 @@ import type {
 import type { BrowserSearchResult, useBrowserSearch } from './useBrowserSearch';
 import type { CalcResult } from '../smart-calculator';
 import { tryCalculate, tryCalculateAsync } from '../smart-calculator';
-import { filterCommands, rankCommands } from '../utils/command-helpers';
+import {
+  createRootCommandScoreIndex,
+  filterCommands,
+  rankCommandsWithIndex,
+} from '../utils/command-helpers';
 import {
   asTildePath,
   buildFileResultCommandId,
@@ -43,7 +47,6 @@ import {
   rankRootSearchCandidates,
   scoreRootSearchCandidate,
   scoreRootSearchFields,
-  type MatchKind,
   type RootSearchCandidate,
   type RootSearchRankingState,
   type RootSearchSubtype,
@@ -52,6 +55,11 @@ import {
   assembleRootSearchSections,
   isRootResultPromotionCandidate,
 } from '../utils/root-search-sections';
+import {
+  buildLauncherFileCandidates,
+  buildLauncherFileResultCommandByPath,
+  coerceRootSearchMatchKind as coerceMatchKind,
+} from '../utils/launcher-file-candidates';
 import type { LauncherCommandSection } from '../components/LauncherCommandList';
 
 export type GroupedLauncherCommands = {
@@ -136,53 +144,6 @@ function inferCommandSubtype(command: CommandInfo): RootSearchSubtype {
   if (command.category === 'extension') return 'extension-command';
   if (command.category === 'script') return 'script-command';
   return 'system-command';
-}
-
-function coerceMatchKind(value: string | undefined, fallback: MatchKind): MatchKind {
-  switch (value) {
-    case 'exact':
-    case 'alias-exact':
-    case 'nickname-exact':
-    case 'prefix':
-    case 'token-prefix':
-    case 'compact-prefix':
-    case 'word-boundary-fuzzy':
-    case 'contains':
-    case 'subsequence':
-    case 'description':
-    case 'path':
-    case 'url':
-      return value;
-    default:
-      return fallback;
-  }
-}
-
-function getFileFreshnessBoost(result: IndexedFileSearchResult): number {
-  const touched = Math.max(Number(result.mtimeMs || 0), Number(result.birthtimeMs || 0));
-  if (!touched) return 0;
-  const ageHours = Math.max(0, (Date.now() - touched) / (60 * 60 * 1000));
-  const ageDays = ageHours / 24;
-  if (ageHours <= 24) return 120;
-  if (ageDays <= 7) return 90;
-  if (ageDays <= 30) return 45;
-  if (ageDays <= 90) return 15;
-  return 0;
-}
-
-function getFileLocationBoost(result: IndexedFileSearchResult): number {
-  const topLevelRoot = String(result.topLevelRoot || '').trim();
-  const depth = Number(result.homeRelativeDepth || result.depth || 0);
-  const protectedRoot = topLevelRoot === 'Desktop' || topLevelRoot === 'Documents' || topLevelRoot === 'Downloads';
-  if (!protectedRoot) return 20;
-  return 120 - Math.min(90, Math.max(0, depth - 2) * 18);
-}
-
-function getFileDepthPenalty(result: IndexedFileSearchResult): number {
-  const depth = Math.max(0, Number(result.homeRelativeDepth || result.depth || 0));
-  if (depth <= 2) return 0;
-  if (depth <= 4) return (depth - 2) * 25;
-  return Math.min(260, 50 + (depth - 4) * 35);
 }
 
 type BrowserLauncherProfile = {
@@ -339,9 +300,13 @@ export function useLauncherCommandModel({
   const calcResult = syncCalcResult ?? asyncCalcResult;
   const calcOffset = calcResult ? 1 : 0;
   const contextualCommands = commands;
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const shouldComputeLegacyCommandList = !hasSearchQuery || Boolean(calcResult);
   const filteredCommands = useMemo(
-    () => filterCommands(contextualCommands, searchQuery, commandAliases),
-    [contextualCommands, searchQuery, commandAliases]
+    () => shouldComputeLegacyCommandList
+      ? filterCommands(contextualCommands, searchQuery, commandAliases)
+      : contextualCommands,
+    [contextualCommands, searchQuery, commandAliases, shouldComputeLegacyCommandList]
   );
 
   // When calculator is showing but no commands match, show unfiltered list below.
@@ -355,7 +320,20 @@ export function useLauncherCommandModel({
     () => new Set(['system-add-to-memory', 'system-cursor-prompt', 'system-emoji-picker']),
     []
   );
-  const hasSearchQuery = searchQuery.trim().length > 0;
+  const shouldIndexRootCommands = hasSearchQuery && !aiMode && rootBangState.mode === 'none';
+  const rootSearchableCommands = useMemo(
+    () => shouldIndexRootCommands
+      ? contextualCommands.filter((cmd) =>
+          cmd.id !== WEB_SEARCH_COMMAND_ID &&
+          (!hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
+        )
+      : [],
+    [contextualCommands, hiddenListOnlyCommandIds, hasSearchQuery, shouldIndexRootCommands]
+  );
+  const rootCommandScoreIndex = useMemo(
+    () => createRootCommandScoreIndex(rootSearchableCommands, commandAliases),
+    [rootSearchableCommands, commandAliases]
+  );
   const visibleSourceCommands = useMemo(
     () => sourceCommands
       .filter((cmd) => !hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
@@ -390,6 +368,10 @@ export function useLauncherCommandModel({
         };
       }),
     [launcherFileResults, launcherFileIcons, homeDir]
+  );
+  const fileResultCommandByPath = useMemo(
+    () => buildLauncherFileResultCommandByPath(fileResultCommands),
+    [fileResultCommands]
   );
 
   const pinnedFileCommands = useMemo<CommandInfo[]>(
@@ -521,21 +503,9 @@ export function useLauncherCommandModel({
   const browserSearchResultCommands = useMemo<CommandInfo[]>(() => [], []);
 
   const commandCandidates = useMemo<RootSearchCandidate[]>(() => {
-    if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
-    const searchableCommands = contextualCommands.filter((cmd) =>
-      cmd.id !== WEB_SEARCH_COMMAND_ID &&
-      (!hiddenListOnlyCommandIds.has(cmd.id) || hasSearchQuery)
-    );
-    return rankCommands(searchableCommands, searchQuery, commandAliases)
-      .map(({ command }) => {
-        const alias = commandAliases[command.id] || '';
-        const scored = scoreRootSearchFields(searchQuery, [
-          { value: command.title, kind: 'label', weight: 1 },
-          { value: alias, kind: 'alias', weight: 1.08 },
-          { value: command.subtitle, kind: 'description', weight: 0.74 },
-          ...(command.keywords || []).map((keyword) => ({ value: keyword, kind: 'description' as const, weight: 0.68 })),
-        ]);
-        if (!scored.matched) return null;
+    if (!shouldIndexRootCommands) return [];
+    return rankCommandsWithIndex(rootCommandScoreIndex, searchQuery)
+      .map(({ command, matchKind, matchScore }) => {
         const subtype = inferCommandSubtype(command);
         const stableKey = `command:${command.id}`;
         return scoreRootSearchCandidate({
@@ -551,8 +521,8 @@ export function useLauncherCommandModel({
           label: command.title,
           description: command.subtitle,
           pathOrUrl: command.path,
-          matchKind: scored.matchKind,
-          matchScore: scored.matchScore,
+          matchKind,
+          matchScore,
           sourceQualityBoost: command.alwaysOnTop ? 80 : 0,
           freshnessBoost: 0,
           pathLocationBoost: 0,
@@ -561,49 +531,17 @@ export function useLauncherCommandModel({
         }, searchQuery, rootSearchRanking);
       })
       .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
-  }, [hasSearchQuery, aiMode, rootBangState, contextualCommands, hiddenListOnlyCommandIds, searchQuery, commandAliases, rootSearchRanking]);
+  }, [shouldIndexRootCommands, rootCommandScoreIndex, searchQuery, rootSearchRanking]);
 
   const fileCandidates = useMemo<RootSearchCandidate[]>(() => {
     if (!hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
-    return launcherFileResults
-      .map((result) => {
-        const command = fileResultCommands.find((item) => item.path === result.path);
-        if (!command) return null;
-        const scored = scoreRootSearchFields(searchQuery, [
-          { value: result.name, kind: 'label', weight: 1 },
-          { value: result.parentPath, kind: 'path', weight: 0.72 },
-          { value: result.displayPath, kind: 'path', weight: 0.72 },
-          { value: result.path, kind: 'path', weight: 0.68 },
-        ]);
-        if (!scored.matched) return null;
-        const subtype: RootSearchSubtype = result.isDirectory ? 'folder' : 'file';
-        const matchKind = coerceMatchKind(result.matchKind, scored.matchKind);
-        const weakFolderMatch = subtype === 'folder' && (matchKind === 'contains' || matchKind === 'subsequence' || matchKind === 'path');
-        const stableKey = `file:${normalizeRootSearchStableValue(result.path)}`;
-        return scoreRootSearchCandidate({
-          command: {
-            ...command,
-            rootSearchStableKey: stableKey,
-            rootSearchSource: 'file',
-            rootSearchSubtype: subtype,
-          },
-          source: 'file',
-          subtype,
-          stableKey,
-          label: result.name,
-          description: result.displayPath,
-          pathOrUrl: result.path,
-          matchKind,
-          matchScore: scored.matchScore,
-          sourceQualityBoost: subtype === 'file' ? 8 : weakFolderMatch ? -10 : 0,
-          freshnessBoost: getFileFreshnessBoost(result),
-          pathLocationBoost: getFileLocationBoost(result),
-          noisePenalty: Math.max(0, Number(result.noisyPathSegmentCount || 0)) * 70,
-          depthPenalty: getFileDepthPenalty(result),
-        }, searchQuery, rootSearchRanking);
-      })
-      .filter((candidate): candidate is RootSearchCandidate => Boolean(candidate));
-  }, [hasSearchQuery, aiMode, rootBangState, launcherFileResults, fileResultCommands, searchQuery, rootSearchRanking]);
+    return buildLauncherFileCandidates({
+      launcherFileResults,
+      fileResultCommandByPath,
+      searchQuery,
+      rootSearchRanking,
+    });
+  }, [hasSearchQuery, aiMode, rootBangState, launcherFileResults, fileResultCommandByPath, searchQuery, rootSearchRanking]);
 
   const browserCandidates = useMemo<RootSearchCandidate[]>(() => {
     if (!browserSearch.enabled || !browserSearch.alphaChromiumRootSearchEnabled || !hasSearchQuery || aiMode || rootBangState.mode !== 'none') return [];
@@ -856,41 +794,6 @@ export function useLauncherCommandModel({
     querySearchSectionCommands,
     queryFileSectionCommands,
   } = rootSearchSectionAssembly;
-
-  // TEMP DIAGNOSTIC (SC-RANK2): pinpoint whether the internal>browser comparator
-  // is actually running, and whether Search Notes / Create Note are candidates.
-  // Remove once the override bug is confirmed fixed.
-  useEffect(() => {
-    if (!hasSearchQuery) return;
-    try {
-      const idOf = (c: any) => String(c?.command?.id || c?.stableKey || '');
-      const sn = commandCandidates.find((c) => idOf(c).includes('search-notes'));
-      const cn = commandCandidates.find((c) => idOf(c).includes('create-note'));
-      const internalCount = rootRankedCandidates.filter((c) => !c.isOrganicBrowserResult).length;
-      const browserCount = rootRankedCandidates.filter((c) => c.isOrganicBrowserResult).length;
-      const firstBrowserIdx = rootRankedCandidates.findIndex((c) => c.isOrganicBrowserResult);
-      const snIdx = rootRankedCandidates.findIndex((c) => idOf(c).includes('search-notes'));
-      const cnIdx = rootRankedCandidates.findIndex((c) => idOf(c).includes('create-note'));
-      const describe = (c: any, idx: number) => c
-        ? { score: Math.round(c.finalScore), matchKind: c.matchKind, organic: c.isOrganicBrowserResult, rankIdx: idx }
-        : 'NOT_A_CANDIDATE';
-      (window as any).electron?.whisperDebugLog?.('SC-RANK2', `q="${searchQuery}"`, {
-        cmdCands: commandCandidates.length,
-        browserCands: browserCandidates.length,
-        rootTotal: rootRankedCandidates.length,
-        internalCount,
-        browserCount,
-        // If the comparator works, firstBrowserIdx === internalCount (all internal first).
-        firstBrowserIdx,
-        comparatorWorking: firstBrowserIdx === -1 || firstBrowserIdx >= internalCount,
-        searchNotes: describe(sn, snIdx),
-        createNote: describe(cn, cnIdx),
-        RESULTS: queryResultCommands.map((c) => c.title),
-      });
-    } catch (e) {
-      (window as any).electron?.whisperDebugLog?.('SC-RANK2', 'ERR', String(e));
-    }
-  }, [hasSearchQuery, searchQuery, rootRankedCandidates, queryResultCommands, commandCandidates, browserCandidates]);
 
   const displayCommands = useMemo(() => {
     if (rootBangState.mode === 'selecting') return rootSearchSectionAssembly.displayCommands;

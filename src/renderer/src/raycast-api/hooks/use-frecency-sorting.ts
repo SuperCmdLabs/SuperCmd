@@ -10,8 +10,13 @@ interface FrecencyEntry {
   lastVisited: number;
 }
 
-function computeFrecencyScore(entry: FrecencyEntry): number {
-  const ageHours = (Date.now() - entry.lastVisited) / (1000 * 60 * 60);
+function getDefaultFrecencyKey(item: unknown): string {
+  const itemId = (item as { id?: unknown } | null | undefined)?.id;
+  return itemId == null ? String(item) : String(itemId);
+}
+
+function computeFrecencyScore(entry: FrecencyEntry, now: number): number {
+  const ageHours = (now - entry.lastVisited) / (1000 * 60 * 60);
   const decay = Math.pow(0.5, ageHours / 72);
   return entry.count * decay;
 }
@@ -30,7 +35,7 @@ export function useFrecencySorting<T>(
 } {
   const ns = options?.namespace || 'default';
   const storageKey = `sc-frecency-${ns}`;
-  const getKey = options?.key || ((item: any) => item?.id ?? String(item));
+  const getKey = options?.key || getDefaultFrecencyKey;
 
   const [frecencyMap, setFrecencyMap] = useState<Record<string, FrecencyEntry>>(() => {
     try {
@@ -60,13 +65,22 @@ export function useFrecencySorting<T>(
     }
 
     const items = [...data];
+    let scoreNow: number | undefined;
+    const getScoreNow = () => {
+      scoreNow ??= Date.now();
+      return scoreNow;
+    };
+
     items.sort((a, b) => {
       const keyA = getKey(a);
       const keyB = getKey(b);
       const entryA = frecencyMap[keyA];
       const entryB = frecencyMap[keyB];
 
-      if (entryA && entryB) return computeFrecencyScore(entryB) - computeFrecencyScore(entryA);
+      if (entryA && entryB) {
+        const now = getScoreNow();
+        return computeFrecencyScore(entryB, now) - computeFrecencyScore(entryA, now);
+      }
       if (entryA && !entryB) return -1;
       if (!entryA && entryB) return 1;
       if (options?.sortUnvisited) return options.sortUnvisited(a, b);

@@ -90,14 +90,31 @@ export type RootSearchScoreResult = {
   matchScore: number;
 };
 
+export type PrecompiledRootSearchQueryTerm = {
+  normalized: string;
+  compact: string;
+};
+
+export type PrecompiledRootSearchQuery = {
+  fullQuery: string;
+  terms: PrecompiledRootSearchQueryTerm[];
+};
+
+export type PrecompiledRootSearchScoringField = {
+  raw: string;
+  normalized: string;
+  compact: string;
+  tokens: string[];
+  boundaryInitials: string;
+  kind: RootSearchFieldKind;
+  weight: number;
+  isSecondaryField: boolean;
+  secondaryKind: MatchKind;
+};
+
 const SEARCH_SEPARATOR_REGEX = /[^\p{L}\p{N}]+/gu;
 const COMBINING_MARK_REGEX = /\p{M}/gu;
 const DAY = 24 * 60 * 60 * 1000;
-
-// Build liveness stamp — confirms the running renderer has the internal>browser
-// precedence fix. Grep the bundle (dist/renderer/assets/*.js) for this string,
-// or look for it in the DevTools console at startup. Remove once verified.
-try { console.info('[SC-RANK build 2026-06-19c internal>browser precedence ACTIVE]'); } catch {}
 
 export const ROOT_SEARCH_RESULTS_LIMIT = 8;
 export const ROOT_SEARCH_PROMOTION_SCORE = 700;
@@ -147,9 +164,13 @@ export function compactRootSearchText(value: string): string {
   return normalizeRootSearchText(value).replace(SEARCH_SEPARATOR_REGEX, '').replace(/\s+/g, '');
 }
 
+function tokenizeNormalizedRootSearchText(normalized: string): string[] {
+  return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+}
+
 export function tokenizeRootSearchQuery(value: string): string[] {
   const normalized = normalizeRootSearchText(value);
-  return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+  return tokenizeNormalizedRootSearchText(normalized);
 }
 
 export function normalizeRootSearchStableValue(value: string): string {
@@ -183,86 +204,117 @@ function isSubsequenceMatch(needle: string, haystack: string): boolean {
   return needleIndex === needle.length;
 }
 
-function hasBoundaryFuzzyMatch(term: string, value: string): boolean {
-  if (!term || !value) return false;
-  const normalized = normalizeRootSearchText(value);
-  if (normalized.split(/\s+/).some((token) => token.startsWith(term))) return true;
-  const compactTerm = compactRootSearchText(term);
+function getRootSearchBoundaryInitials(value: string): string {
   const boundaryChars = String(value || '').match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+/g) || [];
   const camelInitials = boundaryChars.map((part) => part[0]).join('');
-  return Boolean(compactTerm.length >= 2 && compactRootSearchText(camelInitials).startsWith(compactTerm));
+  return compactRootSearchText(camelInitials);
 }
 
-function scoreSingleField(term: string, fullQuery: string, field: RootSearchScoringField): RootSearchScoreResult {
+export function precompileRootSearchQuery(query: string): PrecompiledRootSearchQuery {
+  const fullQuery = normalizeRootSearchText(query);
+  return {
+    fullQuery,
+    terms: tokenizeNormalizedRootSearchText(fullQuery).map((term) => ({
+      normalized: normalizeRootSearchText(term),
+      compact: compactRootSearchText(term),
+    })),
+  };
+}
+
+function getRootSearchFieldWeight(field: RootSearchScoringField): number {
+  return field.weight ?? (field.kind === 'label' ? 1 : field.kind === 'alias' || field.kind === 'nickname' ? 1.04 : 0.72);
+}
+
+function getSecondaryRootSearchMatchKind(field: RootSearchScoringField): MatchKind {
+  return field.kind === 'url' ? 'url' : field.kind === 'path' ? 'path' : 'description';
+}
+
+export function precompileRootSearchScoringField(field: RootSearchScoringField): PrecompiledRootSearchScoringField {
   const raw = String(field.value || '');
   const normalized = normalizeRootSearchText(raw);
-  if (!normalized) return { matched: false, matchKind: 'subsequence', matchScore: 0 };
-
-  const normalizedTerm = normalizeRootSearchText(term);
-  const compactField = compactRootSearchText(raw);
-  const compactTerm = compactRootSearchText(term);
-  const tokens = normalized.split(/\s+/).filter(Boolean);
   const isSecondaryField = field.kind === 'description' || field.kind === 'path' || field.kind === 'url';
-  const secondaryKind: MatchKind = field.kind === 'url' ? 'url' : field.kind === 'path' ? 'path' : 'description';
-  const weight = field.weight ?? (field.kind === 'label' ? 1 : field.kind === 'alias' || field.kind === 'nickname' ? 1.04 : 0.72);
+  return {
+    raw,
+    normalized,
+    compact: normalized ? compactRootSearchText(raw) : '',
+    tokens: tokenizeNormalizedRootSearchText(normalized),
+    boundaryInitials: raw ? getRootSearchBoundaryInitials(raw) : '',
+    kind: field.kind,
+    weight: getRootSearchFieldWeight(field),
+    isSecondaryField,
+    secondaryKind: getSecondaryRootSearchMatchKind(field),
+  };
+}
+
+export function precompileRootSearchScoringFields(fields: RootSearchScoringField[]): PrecompiledRootSearchScoringField[] {
+  return fields.map(precompileRootSearchScoringField);
+}
+
+function scorePrecompiledSingleField(
+  term: PrecompiledRootSearchQueryTerm,
+  fullQuery: string,
+  field: PrecompiledRootSearchScoringField
+): RootSearchScoreResult {
+  if (!field.normalized) return { matched: false, matchKind: 'subsequence', matchScore: 0 };
 
   let kind: MatchKind | null = null;
   let baseScore = 0;
 
-  if (normalized === fullQuery || normalized === normalizedTerm) {
+  if (field.normalized === fullQuery || field.normalized === term.normalized) {
     kind = field.kind === 'alias' ? 'alias-exact' : field.kind === 'nickname' ? 'nickname-exact' : 'exact';
     baseScore = 1000;
-  } else if (normalized.startsWith(normalizedTerm)) {
+  } else if (field.normalized.startsWith(term.normalized)) {
     kind = 'prefix';
     baseScore = 900;
-  } else if (tokens.some((token) => token.startsWith(normalizedTerm))) {
+  } else if (field.tokens.some((token) => token.startsWith(term.normalized))) {
     kind = 'token-prefix';
     baseScore = 780;
-  } else if (compactTerm && compactField.startsWith(compactTerm)) {
+  } else if (term.compact && field.compact.startsWith(term.compact)) {
     kind = 'compact-prefix';
     baseScore = 740;
-  } else if (hasBoundaryFuzzyMatch(normalizedTerm, raw)) {
+  } else if (term.compact.length >= 2 && field.boundaryInitials.startsWith(term.compact)) {
     kind = 'word-boundary-fuzzy';
-    const compactness = Math.max(0, 1 - Math.max(0, compactField.length - compactTerm.length) / 24);
+    const compactness = Math.max(0, 1 - Math.max(0, field.compact.length - term.compact.length) / 24);
     baseScore = 620 + Math.round(compactness * 110);
-  } else if (normalizedTerm.length >= 2 && normalized.includes(normalizedTerm)) {
+  } else if (term.normalized.length >= 2 && field.normalized.includes(term.normalized)) {
     kind = 'contains';
     baseScore = 560;
-  } else if (compactTerm.length >= 2 && isSubsequenceMatch(compactTerm, compactField)) {
+  } else if (term.compact.length >= 2 && isSubsequenceMatch(term.compact, field.compact)) {
     kind = 'subsequence';
-    const density = compactTerm.length / Math.max(compactField.length, compactTerm.length);
+    const density = term.compact.length / Math.max(field.compact.length, term.compact.length);
     baseScore = 380 + Math.round(Math.min(140, density * 170));
   }
 
   if (!kind || baseScore <= 0) return { matched: false, matchKind: 'subsequence', matchScore: 0 };
 
-  if (isSecondaryField && baseScore < 900) {
-    kind = secondaryKind;
+  if (field.isSecondaryField && baseScore < 900) {
+    kind = field.secondaryKind;
     baseScore = Math.min(500, Math.max(260, Math.round(baseScore * 0.72)));
   }
 
   const compactnessBoost = kind === 'exact' || kind === 'alias-exact' || kind === 'nickname-exact' || kind === 'prefix'
-    ? Math.max(0, 36 - Math.max(0, compactField.length - compactTerm.length) * 2)
+    ? Math.max(0, 36 - Math.max(0, field.compact.length - term.compact.length) * 2)
     : 0;
-  const weightedScore = Math.round((baseScore + compactnessBoost) * weight);
+  const weightedScore = Math.round((baseScore + compactnessBoost) * field.weight);
 
   return { matched: true, matchKind: kind, matchScore: weightedScore };
 }
 
-export function scoreRootSearchFields(query: string, fields: RootSearchScoringField[]): RootSearchScoreResult {
-  const fullQuery = normalizeRootSearchText(query);
-  const queryTerms = tokenizeRootSearchQuery(query);
-  if (!fullQuery || queryTerms.length === 0) {
+export function scorePrecompiledRootSearchFields(
+  query: PrecompiledRootSearchQuery,
+  fields: PrecompiledRootSearchScoringField[]
+): RootSearchScoreResult {
+  if (!query.fullQuery || query.terms.length === 0) {
     return { matched: false, matchKind: 'subsequence', matchScore: 0 };
   }
 
   let total = 0;
   let bestKind: MatchKind = 'subsequence';
 
-  for (const term of queryTerms) {
+  for (const term of query.terms) {
     let bestForTerm: RootSearchScoreResult | null = null;
     for (const field of fields) {
-      const scored = scoreSingleField(term, fullQuery, field);
+      const scored = scorePrecompiledSingleField(term, query.fullQuery, field);
       if (!scored.matched) continue;
       if (!bestForTerm || scored.matchScore > bestForTerm.matchScore) {
         bestForTerm = scored;
@@ -280,8 +332,15 @@ export function scoreRootSearchFields(query: string, fields: RootSearchScoringFi
   return {
     matched: true,
     matchKind: bestKind,
-    matchScore: Math.round(total / queryTerms.length),
+    matchScore: Math.round(total / query.terms.length),
   };
+}
+
+export function scoreRootSearchFields(query: string, fields: RootSearchScoringField[]): RootSearchScoreResult {
+  return scorePrecompiledRootSearchFields(
+    precompileRootSearchQuery(query),
+    precompileRootSearchScoringFields(fields)
+  );
 }
 
 function getFrecencyBoost(stableKey: string, ranking: RootSearchRankingState | undefined, now: number): number {

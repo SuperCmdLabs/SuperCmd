@@ -57,8 +57,12 @@ test('Browser search lag fix', async (t) => {
     assertIncludes(files.hook, 'refreshEntriesIfStale');
     assertIncludes(files.hook, 'historyByTimeEntryIds');
     assertIncludes(files.hook, 'bookmarksByBrowserOrderEntryIds');
+    assertIncludes(files.hook, 'tokenPrefixEntryIds');
+    assertIncludes(files.hook, 'tokenTrigramEntryIds');
+    assertIncludes(files.hook, 'getIndexedEntryCandidateIds');
     assertIncludes(files.hook, 'BROWSER_ENTRY_INDEX_MAX_TOKEN_LENGTH = 128');
     assertIncludes(files.hook, 'BROWSER_ENTRY_INDEX_MAX_URL_CHARS = 4096');
+    assertIncludes(files.hook, '__browserSearchTestAccess');
   });
 
   await t.test('local commands use refreshEntriesIfStale not refreshEntries', () => {
