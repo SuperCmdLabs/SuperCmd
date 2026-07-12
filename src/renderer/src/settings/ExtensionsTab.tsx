@@ -259,7 +259,7 @@ const ExtensionsTab: React.FC<{
         map.set(`${INSTALLED_APPLICATIONS_NAME}/${cmd.id}`, cmd);
         continue;
       }
-      if (cmd.category === 'settings') {
+      if (cmd.category === 'settings' && !cmd.settingsSubItem) {
         map.set(`${SYSTEM_SETTINGS_NAME}/${cmd.id}`, cmd);
       }
     }
@@ -391,7 +391,9 @@ const ExtensionsTab: React.FC<{
     }
 
     const systemSettingsCommands = commands
-      .filter((cmd) => cmd.category === 'settings')
+      // Only the top-level panes are assignable here; individual settings
+      // (settingsSubItem) are a search-only fallback and would flood this list.
+      .filter((cmd) => cmd.category === 'settings' && !cmd.settingsSubItem)
       .sort((a, b) => a.title.localeCompare(b.title));
     if (systemSettingsCommands.length > 0) {
       byExt.set(SYSTEM_SETTINGS_NAME, {

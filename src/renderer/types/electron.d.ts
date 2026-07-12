@@ -18,6 +18,10 @@ export interface CommandInfo {
   needsConfirmation?: boolean;
   /** Always shown at the top of the list, even during search. */
   alwaysOnTop?: boolean;
+  /** True for an individual setting parsed from a pane's .searchTerms file
+   * (e.g. "Color Filters" inside Accessibility). Ranked as a low-priority
+   * search fallback so it doesn't crowd out apps, commands, and panes. */
+  settingsSubItem?: boolean;
   browserMatchKind?: 'open-tab' | 'history' | 'search';
   browserResultKind?: 'open-tab' | 'bookmark' | 'history' | 'search';
   browserFaviconUrl?: string;

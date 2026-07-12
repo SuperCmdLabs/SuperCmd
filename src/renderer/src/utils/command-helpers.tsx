@@ -30,6 +30,10 @@ import { renderQuickLinkIconGlyph } from './quicklink-icons';
 import { scoreRootSearchFields } from './root-search-ranking';
 import { getTranslitVariant } from './transliterate';
 
+// Minimum query length before individual settings (e.g. "Color Filters") are
+// considered. Keeps short, broad queries from filling up with system settings.
+const SETTINGS_SUBITEM_MIN_QUERY_LEN = 3;
+
 export interface LauncherAction {
   id: string;
   title: string;
@@ -312,6 +316,12 @@ export function filterCommands(
         return null;
       }
 
+      // Individual settings (e.g. "Color Filters") are a fallback tier: skip
+      // them for very short queries where they'd flood the list.
+      if (cmd.settingsSubItem && normalizedQuery.length < SETTINGS_SUBITEM_MIN_QUERY_LEN) {
+        return null;
+      }
+
       const primaryScore = computeCommandScore(normalizedQuery, queryTerms, title, subtitle, normalizedAlias, candidates, keywordTokens);
       const translitScore = translitVariant.isVariant
         ? computeCommandScore(translitVariant.query, transliteratedTerms, title, subtitle, normalizedAlias, candidates, keywordTokens)
@@ -330,6 +340,12 @@ export function filterCommands(
       if (a.hasExactAliasMatch !== b.hasExactAliasMatch) {
         return Number(b.hasExactAliasMatch) - Number(a.hasExactAliasMatch);
       }
+      // Settings sub-items are a fallback tier — always sort them below real
+      // apps/commands/panes regardless of raw score, so they only show up once
+      // genuine matches are exhausted.
+      const aSub = Boolean(a.cmd.settingsSubItem);
+      const bSub = Boolean(b.cmd.settingsSubItem);
+      if (aSub !== bSub) return Number(aSub) - Number(bSub);
       if (b.score !== a.score) return b.score - a.score;
       return a.title.localeCompare(b.title);
     });
