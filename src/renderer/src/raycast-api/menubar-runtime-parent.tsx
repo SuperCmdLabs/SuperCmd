@@ -23,6 +23,13 @@ import {
   type MenuBarProps,
 } from './menubar-runtime-shared';
 
+type SerializedMenuBarItemsCache = {
+  registryVersion: number;
+  assetsPath: string;
+  items: any[];
+  actions: Map<string, () => void>;
+};
+
 export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoading }: MenuBarProps) {
   const deps = getMenuBarRuntimeDeps();
   const extInfo = useContext(deps.ExtensionInfoReactContext);
@@ -36,6 +43,7 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
   const registryRef = useRef(new Map<string, MBItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
   const pendingRef = useRef(false);
+  const serializedItemsCacheRef = useRef<SerializedMenuBarItemsCache | null>(null);
   const visiblePayloadHashCacheRef = useRef(createMenuBarVisiblePayloadHashCache());
 
   resetMenuBarOrderCounters();
@@ -72,11 +80,6 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
     let cancelled = false;
 
     const syncMenuBar = async () => {
-      const allItems = Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
-      const actions = new Map<string, (event: MenuBarActionEvent) => void>();
-      const serialized: any[] = [];
-      let prevSectionId: string | undefined | null = null;
-
       const withRuntimeContext = (fn: (event: MenuBarActionEvent) => void): (() => void) => {
         return () => {
           deps.setExtensionContext({ ...runtimeCtxRef.current });
@@ -131,33 +134,58 @@ export function MenuBarExtraComponent({ children, icon, title, tooltip, isLoadin
         return serializedItem;
       };
 
-      for (const item of allItems) {
-        const sectionChanged = item.sectionId !== prevSectionId;
-        if (sectionChanged && item.sectionTitle) {
-          // Section title — dimmed, non-interactive label.
-          serialized.push({ type: 'item', title: item.sectionTitle, disabled: true });
-        } else if (sectionChanged && prevSectionId != null) {
-          // Untitled section boundary — plain separator.
-          serialized.push({ type: 'separator' });
-        }
-        prevSectionId = item.sectionId;
-        serialized.push(await serializeItem(item));
-      }
+      const cachedItems = serializedItemsCacheRef.current;
+      const canReuseSerializedItems =
+        cachedItems?.registryVersion === registryVersion &&
+        cachedItems.assetsPath === assetsPath;
 
-      // Insert a thin separator wherever a dimmed item is immediately followed
-      // by an enabled item. This produces Raycast's layout for both section
-      // titles and bare informational labels — title/label on top, divider,
-      // then the section's actionable items.
-      const dividedSerialized: any[] = [];
-      for (let i = 0; i < serialized.length; i += 1) {
-        const cur = serialized[i];
-        const next = serialized[i + 1];
-        dividedSerialized.push(cur);
-        const curIsDimmedItem = cur?.type === 'item' && cur?.disabled === true;
-        const nextIsEnabledItem = next?.type === 'item' && next?.disabled !== true;
-        if (curIsDimmedItem && nextIsEnabledItem) {
-          dividedSerialized.push({ type: 'separator' });
+      let actions: Map<string, () => void>;
+      let dividedSerialized: any[];
+
+      if (canReuseSerializedItems) {
+        actions = cachedItems.actions;
+        dividedSerialized = cachedItems.items;
+      } else {
+        const allItems = Array.from(registryRef.current.values()).sort((a, b) => a.order - b.order);
+        actions = new Map<string, () => void>();
+        const serialized: any[] = [];
+        let prevSectionId: string | undefined | null = null;
+
+        for (const item of allItems) {
+          const sectionChanged = item.sectionId !== prevSectionId;
+          if (sectionChanged && item.sectionTitle) {
+            // Section title — dimmed, non-interactive label.
+            serialized.push({ type: 'item', title: item.sectionTitle, disabled: true });
+          } else if (sectionChanged && prevSectionId != null) {
+            // Untitled section boundary — plain separator.
+            serialized.push({ type: 'separator' });
+          }
+          prevSectionId = item.sectionId;
+          serialized.push(await serializeItem(item));
         }
+
+        // Insert a thin separator wherever a dimmed item is immediately followed
+        // by an enabled item. This produces Raycast's layout for both section
+        // titles and bare informational labels — title/label on top, divider,
+        // then the section's actionable items.
+        dividedSerialized = [];
+        for (let i = 0; i < serialized.length; i += 1) {
+          const cur = serialized[i];
+          const next = serialized[i + 1];
+          dividedSerialized.push(cur);
+          const curIsDimmedItem = cur?.type === 'item' && cur?.disabled === true;
+          const nextIsEnabledItem = next?.type === 'item' && next?.disabled !== true;
+          if (curIsDimmedItem && nextIsEnabledItem) {
+            dividedSerialized.push({ type: 'separator' });
+          }
+        }
+
+        serializedItemsCacheRef.current = {
+          registryVersion,
+          assetsPath,
+          actions,
+          items: dividedSerialized,
+        };
       }
 
       const trayIconPayload =

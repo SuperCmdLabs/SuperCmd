@@ -169,10 +169,10 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
 
         if (showActions) return;
 
-        if (event.key === 'ArrowRight') setSelectedIdx((value) => Math.min(value + 1, filteredItems.length - 1));
-        else if (event.key === 'ArrowLeft') setSelectedIdx((value) => Math.max(value - 1, 0));
-        else if (event.key === 'ArrowDown') setSelectedIdx((value) => Math.min(value + cols, filteredItems.length - 1));
-        else if (event.key === 'ArrowUp') setSelectedIdx((value) => Math.max(value - cols, 0));
+        if (event.key === 'ArrowRight') setSelectedIdx((value: number) => Math.min(value + 1, filteredItems.length - 1));
+        else if (event.key === 'ArrowLeft') setSelectedIdx((value: number) => Math.max(value - 1, 0));
+        else if (event.key === 'ArrowDown') setSelectedIdx((value: number) => Math.min(value + cols, filteredItems.length - 1));
+        else if (event.key === 'ArrowUp') setSelectedIdx((value: number) => Math.max(value - cols, 0));
         else if (event.key === 'Enter' && !event.repeat) primaryAction?.execute();
         else return;
 
@@ -192,7 +192,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     }, [filteredItems.length, selectedIdx]);
 
     useEffect(() => {
-      gridRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      gridRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }, [selectedIdx]);
 
     useEffect(() => {

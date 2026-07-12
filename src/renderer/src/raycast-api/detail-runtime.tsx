@@ -3,7 +3,7 @@
  * Purpose: Detail component runtime and metadata primitives.
  */
 
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { normalizeScAssetUrl, resolveReadableTintColor, resolveTintColor, toScAssetUrl } from './icon-runtime-assets';
 import { renderSimpleMarkdown } from './detail-markdown';
 import { useI18n } from '../i18n';
@@ -74,6 +74,18 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
     const { pop } = deps.useNavigation();
     const { collectedActions: detailActions, registryAPI: detailActionRegistry } = deps.useCollectedActions();
     const primaryAction = detailActions[0];
+    const globalKeydownRef = useRef({
+      detailActions,
+      isMetaK: deps.isMetaK,
+      matchesShortcut: deps.matchesShortcut,
+      primaryAction,
+    });
+    globalKeydownRef.current = {
+      detailActions,
+      isMetaK: deps.isMetaK,
+      matchesShortcut: deps.matchesShortcut,
+      primaryAction,
+    };
 
     const { detailMetadata, detailChildren } = useMemo(() => {
       if (metadata) {
@@ -90,7 +102,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
 
       for (const node of allChildren) {
         if (React.isValidElement(node)) {
-          const typeRecord = node.type as Record<string, unknown> | null;
+          const typeRecord = node.type as unknown as Record<string, unknown> | null;
           if (typeRecord?.[DETAIL_METADATA_RUNTIME_MARKER] === true) {
             metadataNodes.push(node);
             continue;
@@ -111,11 +123,17 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
 
     useEffect(() => {
       const handler = (event: KeyboardEvent) => {
-        if (deps.isMetaK(event)) { event.preventDefault(); setShowActions((prev) => !prev); return; }
-        if (event.key === 'Enter' && event.metaKey && !event.repeat && primaryAction) { event.preventDefault(); primaryAction.execute(); return; }
+        const {
+          detailActions: currentActions,
+          isMetaK: currentIsMetaK,
+          matchesShortcut: currentMatchesShortcut,
+          primaryAction: currentPrimaryAction,
+        } = globalKeydownRef.current;
+        if (currentIsMetaK(event)) { event.preventDefault(); setShowActions((prev) => !prev); return; }
+        if (event.key === 'Enter' && event.metaKey && !event.repeat && currentPrimaryAction) { event.preventDefault(); currentPrimaryAction.execute(); return; }
         if (!event.repeat) {
-          for (const action of detailActions) {
-            if (action.shortcut && deps.matchesShortcut(event, action.shortcut)) {
+          for (const action of currentActions) {
+            if (action.shortcut && currentMatchesShortcut(event, action.shortcut)) {
               event.preventDefault();
               action.execute();
               return;
@@ -125,7 +143,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [detailActions, primaryAction]);
+    }, []);
 
     const handleActionExecute = useCallback((action: ExtractedActionLike) => {
       setShowActions(false);
@@ -290,7 +308,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
   );
 
   const MetadataComponent = ({ children }: { children?: React.ReactNode }) => <div className="space-y-4">{children}</div>;
-  (MetadataComponent as Record<string, unknown>)[DETAIL_METADATA_RUNTIME_MARKER] = true;
+  (MetadataComponent as unknown as Record<string, unknown>)[DETAIL_METADATA_RUNTIME_MARKER] = true;
   MetadataComponent.displayName = 'Detail.Metadata';
 
   const Metadata = Object.assign(

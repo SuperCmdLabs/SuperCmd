@@ -5,7 +5,7 @@
  * subcomponents like EmptyView and Dropdown.
  */
 
-import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   EmptyViewRegistryContext,
   ListRegistryContext,
@@ -20,6 +20,60 @@ interface ListRendererDeps {
   resolveTintColor: (tintColor?: string) => string | undefined;
   resolveReadableTintColor: (tintColor?: string, options?: { minContrast?: number }) => string | undefined;
   addHexAlpha: (hex: string, alphaHex?: string) => string | null;
+}
+
+export type ListDropdownItem = { title: string; value: string };
+
+export function flattenListDropdownItems(children: React.ReactNode, metrics?: { childWalks?: number; itemPushes?: number }): ListDropdownItem[] {
+  const items: ListDropdownItem[] = [];
+  const walk = (nodes: React.ReactNode) => {
+    React.Children.forEach(nodes, (child) => {
+      if (!React.isValidElement(child)) return;
+      metrics && (metrics.childWalks = (metrics.childWalks || 0) + 1);
+      const props = child.props as any;
+      if (props.value !== undefined && props.title !== undefined) {
+        items.push({ title: props.title, value: props.value });
+        metrics && (metrics.itemPushes = (metrics.itemPushes || 0) + 1);
+      }
+      if (props.children) walk(props.children);
+    });
+  };
+  walk(children);
+  return items;
+}
+
+type ListItemRendererProps = ListItemProps & {
+  isSelected?: boolean;
+  dataIdx?: number;
+  onSelect?: React.MouseEventHandler<HTMLDivElement>;
+  onActivate?: React.MouseEventHandler<HTMLDivElement>;
+  onContextAction?: React.MouseEventHandler<HTMLDivElement>;
+  assetsPath?: string;
+};
+
+function areListItemRendererPropsEqual(previous: ListItemRendererProps, next: ListItemRendererProps): boolean {
+  return (
+    getListTextValue(previous.title) === getListTextValue(next.title)
+    && getListTextValue(previous.subtitle) === getListTextValue(next.subtitle)
+    && previous.icon === next.icon
+    && previous.accessories === next.accessories
+    && previous.isSelected === next.isSelected
+    && previous.dataIdx === next.dataIdx
+    && previous.assetsPath === next.assetsPath
+  );
+}
+
+function areListEmojiGridItemRendererPropsEqual(previous: any, next: any): boolean {
+  return (
+    previous.icon === next.icon
+    && previous.title === next.title
+    && previous.isSelected === next.isSelected
+    && previous.dataIdx === next.dataIdx
+  );
+}
+
+function getListTextValue(value: unknown): string {
+  return typeof value === 'string' ? value : (value as any)?.value || '';
 }
 
 export function createListRenderers(deps: ListRendererDeps) {
@@ -79,7 +133,7 @@ export function createListRenderers(deps: ListRendererDeps) {
   (ListItemComponent as any).Accessory = {} as ListItemAccessory;
   (ListItemComponent as any).Props = {} as ListItemProps;
 
-  function ListItemRenderer({ title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate, onContextAction, assetsPath }: ListItemProps & any) {
+  const ListItemRenderer = React.memo(function ListItemRenderer({ title, subtitle, icon, accessories, isSelected, dataIdx, onSelect, onActivate, onContextAction, assetsPath }: ListItemRendererProps) {
     const titleStr = typeof title === 'string' ? title : (title as any)?.value || '';
     const subtitleStr = typeof subtitle === 'string' ? subtitle : (subtitle as any)?.value || '';
     const primaryText = titleStr || subtitleStr;
@@ -123,9 +177,9 @@ export function createListRenderers(deps: ListRendererDeps) {
         </div>
       </div>
     );
-  }
+  }, areListItemRendererPropsEqual);
 
-  function ListEmojiGridItemRenderer({ icon, title, isSelected, dataIdx, onSelect, onActivate, onContextAction }: any) {
+  const ListEmojiGridItemRenderer = React.memo(function ListEmojiGridItemRenderer({ icon, title, isSelected, dataIdx, onSelect, onActivate, onContextAction }: any) {
     const emoji = typeof icon === 'string' ? icon : '';
     return (
       <div
@@ -153,7 +207,7 @@ export function createListRenderers(deps: ListRendererDeps) {
         <span className="text-[46px] leading-none select-none">{emoji || '🙂'}</span>
       </div>
     );
-  }
+  }, areListEmojiGridItemRendererPropsEqual);
 
   function ListSectionComponent({ children, title }: { children?: React.ReactNode; title?: string }) {
     return <ListSectionTitleContext.Provider value={title}>{children}</ListSectionTitleContext.Provider>;
@@ -185,17 +239,7 @@ export function createListRenderers(deps: ListRendererDeps) {
   function ListDropdown({ children, tooltip, onChange, value, defaultValue }: any) {
     const [internalValue, setInternalValue] = useState(value ?? defaultValue ?? '');
     const didEmitInitialChange = useRef(false);
-
-    const items: { title: string; value: string }[] = [];
-    const walk = (nodes: React.ReactNode) => {
-      React.Children.forEach(nodes, (child) => {
-        if (!React.isValidElement(child)) return;
-        const props = child.props as any;
-        if (props.value !== undefined && props.title !== undefined) items.push({ title: props.title, value: props.value });
-        if (props.children) walk(props.children);
-      });
-    };
-    walk(children);
+    const items = useMemo(() => flattenListDropdownItems(children), [children]);
 
     useEffect(() => {
       if (didEmitInitialChange.current || !onChange) return;

@@ -5,7 +5,7 @@
  * all field subcomponents.
  */
 
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { attachFormFields } from './form-runtime-fields';
 import {
   FormContext,
@@ -97,6 +97,8 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
 
     const { collectedActions: formActions, registryAPI: formActionRegistry } = useCollectedActions();
     const primaryAction = formActions[0];
+    const globalKeydownRef = useRef({ formActions, isMetaK, matchesShortcut, primaryAction });
+    globalKeydownRef.current = { formActions, isMetaK, matchesShortcut, primaryAction };
 
     const extensionContext = getExtensionContext();
     const footerTitle =
@@ -109,19 +111,25 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
 
     useEffect(() => {
       const handler = (event: KeyboardEvent) => {
-        if (isMetaK(event)) {
+        const {
+          formActions: currentActions,
+          isMetaK: currentIsMetaK,
+          matchesShortcut: currentMatchesShortcut,
+          primaryAction: currentPrimaryAction,
+        } = globalKeydownRef.current;
+        if (currentIsMetaK(event)) {
           event.preventDefault();
           setShowActions((value) => !value);
           return;
         }
-        if (event.key === 'Enter' && event.metaKey && !event.repeat && primaryAction) {
+        if (event.key === 'Enter' && event.metaKey && !event.repeat && currentPrimaryAction) {
           event.preventDefault();
-          primaryAction.execute();
+          currentPrimaryAction.execute();
           return;
         }
         if (event.repeat) return;
-        for (const action of formActions) {
-          if (!action.shortcut || !matchesShortcut(event, action.shortcut)) continue;
+        for (const action of currentActions) {
+          if (!action.shortcut || !currentMatchesShortcut(event, action.shortcut)) continue;
           event.preventDefault();
           action.execute();
           return;
@@ -130,7 +138,7 @@ export function createFormRuntime(deps: FormRuntimeDeps) {
 
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [formActions, isMetaK, matchesShortcut, primaryAction]);
+    }, []);
 
     const contextValue = useMemo(
       () => ({ values, setValue, errors, setError, placeholders, setPlaceholder }),

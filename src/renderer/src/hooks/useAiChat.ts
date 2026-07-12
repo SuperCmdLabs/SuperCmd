@@ -14,7 +14,7 @@
  * - exitAiMode(): leave AI mode (conversation is kept in history)
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import type {
   AiChatConversation as AiConversation,
   AiChatMessage as AiMessage,
@@ -36,7 +36,7 @@ export interface UseAiChatReturn {
   setAiQuery: (value: string) => void;
   aiInputRef: React.RefObject<HTMLInputElement>;
   aiResponseRef: React.RefObject<HTMLDivElement>;
-  setAiAvailable: (value: boolean) => void;
+  setAiAvailable: Dispatch<SetStateAction<boolean>>;
   conversations: AiConversation[];
   activeConversationId: string | null;
   startAiChat: (searchQuery: string) => void;

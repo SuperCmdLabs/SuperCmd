@@ -28,6 +28,18 @@ export function useExec<T = string>(
 ) {
   const actualArgs: string[] = Array.isArray(args) ? args : [];
   const actualOptions = Array.isArray(args) ? options : (args as typeof options);
+  const execArgs = [
+    command,
+    actualArgs,
+    {
+      cwd: actualOptions?.cwd,
+      env: actualOptions?.env,
+      input: actualOptions?.input,
+      shell: actualOptions?.shell,
+      stripFinalNewline: actualOptions?.stripFinalNewline,
+      timeout: actualOptions?.timeout,
+    },
+  ];
 
   return usePromise(
     async () => {
@@ -68,7 +80,7 @@ export function useExec<T = string>(
 
       return stdout as any as T;
     },
-    [],
+    execArgs,
     {
       initialData: actualOptions?.initialData,
       execute: actualOptions?.execute,

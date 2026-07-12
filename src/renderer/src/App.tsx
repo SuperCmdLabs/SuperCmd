@@ -1078,10 +1078,8 @@ const App: React.FC = () => {
 
   const pinToggleForCommand = useCallback(
     async (command: CommandInfo) => {
-      console.log('[PIN-TOGGLE] called for command:', command?.id, command?.name);
       const currentPinned = pinnedCommandsRef.current;
       const exists = currentPinned.includes(command.id);
-      console.log('[PIN-TOGGLE] currentPinned:', currentPinned, 'exists:', exists);
       if (exists) {
         await updatePinnedCommands(
           currentPinned.filter((id) => id !== command.id)
@@ -1089,7 +1087,6 @@ const App: React.FC = () => {
       } else {
         await updatePinnedCommands([command.id, ...currentPinned]);
       }
-      console.log('[PIN-TOGGLE] done, new pinned:', pinnedCommandsRef.current);
     },
     [updatePinnedCommands]
   );
@@ -1642,9 +1639,9 @@ const App: React.FC = () => {
       const elementRect = selectedElement.getBoundingClientRect();
 
       if (elementRect.top < containerRect.top) {
-        selectedElement.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        selectedElement.scrollIntoView({ block: 'start', behavior: 'auto' });
       } else if (elementRect.bottom > containerRect.bottom) {
-        selectedElement.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        selectedElement.scrollIntoView({ block: 'end', behavior: 'auto' });
       }
     }
   }, [selectedIndex]);
