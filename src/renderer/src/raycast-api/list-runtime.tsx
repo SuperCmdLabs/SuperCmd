@@ -265,6 +265,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     const OVERSCAN = 8;
 
     const flatRows = useMemo(() => {
+      if (shouldUseEmojiGridValue) return [];
       const rows: Array<
         | { type: 'header'; title: string; key: string }
         | { type: 'item'; item: typeof filteredItems[number]; globalIdx: number; key: string }
@@ -277,7 +278,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
         }
       }
       return rows;
-    }, [groupedItems]);
+    }, [groupedItems, shouldUseEmojiGridValue]);
 
     const rowMetrics = useMemo(() => {
       const offsets: number[] = new Array(flatRows.length);
@@ -367,6 +368,10 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     useEffect(() => {
       const el = listRef.current;
       if (!el) return;
+      if (shouldUseEmojiGridValue) {
+        el.querySelector<HTMLElement>(`[data-idx="${selectedIdx}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        return;
+      }
       const rowIdx = itemIdxToRowIdxRef.current[selectedIdx];
       if (rowIdx == null) return;
       const top = rowMetricsRef.current.offsets[rowIdx];
@@ -381,7 +386,7 @@ export function createListRuntime(deps: ListRuntimeDeps) {
       } else if (top + rowH > visBottom) {
         el.scrollTo({ top: top + rowH - el.clientHeight, behavior: 'auto' });
       }
-    }, [selectedIdx]);
+    }, [selectedIdx, shouldUseEmojiGridValue]);
 
     const extensionContext = getExtensionContext();
     const footerTitle = navigationTitle || extInfo.extensionDisplayName || extensionContext.extensionDisplayName || extensionContext.extensionName || 'Extension';
@@ -390,7 +395,8 @@ export function createListRuntime(deps: ListRuntimeDeps) {
     const detailElement = useMemo(() => {
       if (!rawDetail || !React.isValidElement(rawDetail)) return rawDetail;
       if (rawDetail.type !== React.Fragment) return rawDetail;
-      const children = React.Children.toArray(rawDetail.props.children);
+      const rawDetailElement = rawDetail as React.ReactElement<{ children?: React.ReactNode }>;
+      const children = React.Children.toArray(rawDetailElement.props.children);
       let mergedMarkdown: string | undefined;
       let mergedMetadata: React.ReactElement | undefined;
       let mergedIsLoading: boolean | undefined;

@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
+import { clearFormFieldError, setFormFieldError, type FormErrorMap } from '../form-runtime-state';
 
 export enum FormValidation {
   Required = 'required',
@@ -23,25 +24,21 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
   focus: (key: keyof T) => void;
 } {
   const [values, setValues] = useState<T>((options.initialValues || {}) as T);
-  const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
+  const [errors, setErrors] = useState<FormErrorMap>({});
 
   const setValue = useCallback((key: keyof T, value: any) => {
     setValues((prev) => ({ ...prev, [key]: value }));
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+    setErrors((prev) => clearFormFieldError(prev, key as string));
   }, []);
 
   const setValidationError = useCallback((key: keyof T, error: string) => {
-    setErrors((prev) => ({ ...prev, [key]: error }));
+    setErrors((prev) => setFormFieldError(prev, key as string, error));
   }, []);
 
   const validate = useCallback((): boolean => {
     if (!options.validation) return true;
 
-    const newErrors: Partial<Record<keyof T, string>> = {};
+    const newErrors: FormErrorMap = {};
     let valid = true;
 
     for (const key of Object.keys(options.validation) as (keyof T)[]) {
@@ -62,7 +59,7 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
       }
 
       if (error) {
-        newErrors[key] = error;
+        newErrors[key as string] = error;
         valid = false;
       }
     }
@@ -99,7 +96,7 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
         id: key as string,
         value: values[key as keyof T],
         onChange: (v: any) => setValue(key as keyof T, v),
-        error: errors[key as keyof T],
+        error: errors[key as string],
         onBlur: () => {
           const rule = options.validation?.[key as keyof T];
           if (!rule) return;
@@ -121,7 +118,7 @@ export function useForm<T extends Record<string, any> = Record<string, any>>(opt
           }
 
           if (err) {
-            setErrors((prev) => ({ ...prev, [key]: err }));
+            setErrors((prev) => setFormFieldError(prev, key as string, err));
           }
         },
       };
