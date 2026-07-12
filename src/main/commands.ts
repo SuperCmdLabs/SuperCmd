@@ -18,7 +18,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { discoverInstalledExtensionCommands } from './extension-runner';
 import { discoverScriptCommands } from './script-command-runner';
-import { getAllQuickLinks, getQuickLinkCommandId, type QuickLink, type QuickLinkIcon } from './quicklink-store';
+import { getAllQuickLinks, getQuickLinkCommandId, isQuickLinkCommandId, type QuickLink, type QuickLinkIcon } from './quicklink-store';
 import { loadSettings,getSearchApplicationsScope} from './settings-store';
 
 const execAsync = promisify(exec);
@@ -112,6 +112,9 @@ let inflightDiscovery: Promise<CommandInfo[]> | null = null;
 let lastStaleRefreshRequestAt = 0;
 const CACHE_TTL = 30 * 60_000; // 30 min
 const STALE_REFRESH_COOLDOWN_MS = 15_000;
+let commandDiscoveryStartCount = 0;
+let commandDiscoveryRunnerForTesting: (() => Promise<CommandInfo[]>) | null = null;
+let extensionCommandInfoRunnerForTesting: (() => CommandInfo[]) | null = null;
 
 // ─── Commands Disk Cache ─────────────────────────────────────────────────────
 // Persists the discovered commands list across restarts so the launcher is
@@ -176,6 +179,43 @@ export function initCommandsCache(): void {
 /** Returns the current inflight background discovery promise, if any. */
 export function getInflightDiscovery(): Promise<CommandInfo[]> | null {
   return inflightDiscovery;
+}
+
+export function __resetCommandCacheForTesting(): void {
+  cachedCommands = null;
+  staleCommandsFallback = null;
+  cacheTimestamp = 0;
+  inflightDiscovery = null;
+  lastStaleRefreshRequestAt = 0;
+  commandDiscoveryStartCount = 0;
+  commandDiscoveryRunnerForTesting = null;
+  extensionCommandInfoRunnerForTesting = null;
+  commandsDiskCachePath = null;
+}
+
+export function __seedCommandCacheForTesting(
+  commands: CommandInfo[],
+  options?: { cacheTimestamp?: number }
+): void {
+  cachedCommands = commands;
+  staleCommandsFallback = commands;
+  cacheTimestamp = options?.cacheTimestamp ?? Date.now();
+}
+
+export function __setCommandDiscoveryRunnerForTesting(
+  runner: (() => Promise<CommandInfo[]>) | null
+): void {
+  commandDiscoveryRunnerForTesting = runner;
+}
+
+export function __setExtensionCommandInfoRunnerForTesting(
+  runner: (() => CommandInfo[]) | null
+): void {
+  extensionCommandInfoRunnerForTesting = runner;
+}
+
+export function __getCommandDiscoveryStartCountForTesting(): number {
+  return commandDiscoveryStartCount;
 }
 
 // ─── Icon Disk Cache ────────────────────────────────────────────────
@@ -655,6 +695,98 @@ function buildQuickLinkKeywords(quickLink: QuickLink): string[] {
   } catch {}
 
   return Array.from(set);
+}
+
+function discoverExtensionCommandInfos(): CommandInfo[] {
+  if (extensionCommandInfoRunnerForTesting) {
+    return extensionCommandInfoRunnerForTesting();
+  }
+
+  try {
+    return discoverInstalledExtensionCommands().map((ext) => ({
+      id: ext.id,
+      title: ext.title,
+      subtitle: ext.extensionTitle,
+      keywords: ext.keywords,
+      iconDataUrl: ext.iconDataUrl,
+      category: 'extension' as const,
+      path: `${ext.extName}/${ext.cmdName}`,
+      mode: ext.mode,
+      interval: ext.interval,
+      disabledByDefault: ext.disabledByDefault,
+      commandArgumentDefinitions: ext.commandArgumentDefinitions || [],
+      deeplink: ext.owner
+        ? `supercmd://extensions/${encodeURIComponent(ext.owner)}/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`
+        : `supercmd://extensions/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`,
+    }));
+  } catch (e) {
+    console.error('Failed to discover installed extensions:', e);
+    return [];
+  }
+}
+
+function discoverScriptCommandInfos(): CommandInfo[] {
+  try {
+    return discoverScriptCommands().map((script) => ({
+      id: script.id,
+      title: script.title,
+      subtitle: script.packageName,
+      keywords: script.keywords,
+      iconDataUrl: script.iconDataUrl,
+      iconEmoji: script.iconEmoji,
+      category: 'script' as const,
+      path: script.scriptPath,
+      mode: script.mode,
+      interval: script.interval,
+      needsConfirmation: script.needsConfirmation,
+      commandArgumentDefinitions: script.arguments.map((arg) => ({
+        name: arg.name,
+        required: arg.required,
+        type: arg.type,
+        placeholder: arg.placeholder,
+        title: arg.placeholder,
+        data: arg.data,
+      })),
+      deeplink: script.slug
+        ? `supercmd://script-commands/${encodeURIComponent(script.slug)}`
+        : undefined,
+    }));
+  } catch (e) {
+    console.error('Failed to discover script commands:', e);
+    return [];
+  }
+}
+
+async function discoverQuickLinkCommandInfos(): Promise<CommandInfo[]> {
+  try {
+    const quickLinks = getAllQuickLinks();
+    return await Promise.all(
+      quickLinks.map(async (quickLink) => {
+        const resolvedIconName = resolveQuickLinkIconName(quickLink.icon);
+        let iconDataUrl = resolveQuickLinkIconDataUrl(quickLink, resolvedIconName);
+
+        if (!resolvedIconName && quickLink.applicationPath) {
+          const resolvedAppIconDataUrl = await getIconDataUrl(quickLink.applicationPath);
+          if (resolvedAppIconDataUrl) {
+            iconDataUrl = resolvedAppIconDataUrl;
+          }
+        }
+
+        return {
+          id: getQuickLinkCommandId(quickLink.id),
+          title: quickLink.name,
+          subtitle: quickLink.applicationName || 'Quick Link',
+          keywords: buildQuickLinkKeywords(quickLink),
+          iconDataUrl,
+          iconName: iconDataUrl ? undefined : resolvedIconName,
+          category: 'system' as const,
+        };
+      })
+    );
+  } catch (e) {
+    console.error('Failed to discover quick links:', e);
+    return [];
+  }
 }
 
 function getLocaleCandidates(): string[] {
@@ -1270,7 +1402,107 @@ async function openSettingsPane(identifier: string): Promise<void> {
 
 // ─── Public API ─────────────────────────────────────────────────────
 
+function assignUniversalDeeplinks(commands: CommandInfo[]): void {
+  for (const cmd of commands) {
+    if (!cmd.deeplink && cmd.id) {
+      cmd.deeplink = `supercmd://commands/${encodeURIComponent(cmd.id)}`;
+    }
+  }
+}
+
+function applyRuntimeMetadataAndAliases(commands: CommandInfo[]): void {
+  try {
+    const loadedSettings = loadSettings();
+    const commandMetadata = loadedSettings.commandMetadata || {};
+    const commandAliases = loadedSettings.commandAliases || {};
+    for (const cmd of commands) {
+      const metadata = commandMetadata[cmd.id] || (cmd.path ? commandMetadata[cmd.path] : undefined);
+      if (!(cmd.category === 'script' && cmd.mode !== 'inline') && metadata?.subtitle !== undefined) {
+        const subtitle = String(metadata.subtitle || '').trim();
+        if (subtitle) {
+          cmd.subtitle = subtitle;
+        }
+      }
+      const alias = String(commandAliases[cmd.id] || '').trim();
+      if (alias) {
+        cmd.keywords = Array.from(new Set([...(cmd.keywords || []), alias]));
+      }
+    }
+  } catch {}
+}
+
+function publishCommandCache(commands: CommandInfo[]): CommandInfo[] {
+  assignUniversalDeeplinks(commands);
+  applyRuntimeMetadataAndAliases(commands);
+
+  cachedCommands = commands;
+  cacheTimestamp = Date.now();
+  staleCommandsFallback = commands;
+  saveCommandsDiskCache(commands);
+
+  return cachedCommands;
+}
+
+function cloneCommandForTargetedRefresh(command: CommandInfo): CommandInfo {
+  return {
+    ...command,
+    keywords: command.keywords ? [...command.keywords] : undefined,
+    commandArgumentDefinitions: command.commandArgumentDefinitions
+      ? command.commandArgumentDefinitions.map((arg) => ({
+          ...arg,
+          data: arg.data ? arg.data.map((item) => ({ ...item })) : arg.data,
+        }))
+      : undefined,
+  };
+}
+
+function getExtensionInsertionIndex(commands: CommandInfo[]): number {
+  const existingExtensionIndex = commands.findIndex((command) => command.category === 'extension');
+  if (existingExtensionIndex >= 0) return existingExtensionIndex;
+
+  const scriptIndex = commands.findIndex((command) => command.category === 'script');
+  if (scriptIndex >= 0) return scriptIndex;
+
+  const quickLinkIndex = commands.findIndex((command) => isQuickLinkCommandId(command.id));
+  if (quickLinkIndex >= 0) return quickLinkIndex;
+
+  const systemIndex = commands.findIndex((command) => command.category === 'system');
+  if (systemIndex >= 0) return systemIndex;
+
+  return commands.length;
+}
+
+function rebuildCommandsWithFreshExtensions(
+  baseCommands: CommandInfo[],
+  extensionCommands: CommandInfo[]
+): CommandInfo[] {
+  const insertionIndex = getExtensionInsertionIndex(baseCommands);
+  const beforeExtensions: CommandInfo[] = [];
+  const afterExtensions: CommandInfo[] = [];
+
+  baseCommands.forEach((command, index) => {
+    if (command.category === 'extension') return;
+    const cloned = cloneCommandForTargetedRefresh(command);
+    if (index < insertionIndex) {
+      beforeExtensions.push(cloned);
+    } else {
+      afterExtensions.push(cloned);
+    }
+  });
+
+  return [
+    ...beforeExtensions,
+    ...extensionCommands.map(cloneCommandForTargetedRefresh),
+    ...afterExtensions,
+  ];
+}
+
 async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
+  commandDiscoveryStartCount++;
+  if (commandDiscoveryRunnerForTesting) {
+    return publishCommandCache(await commandDiscoveryRunnerForTesting());
+  }
+
   const t0 = Date.now();
   console.log('Discovering applications and settings…');
 
@@ -1847,90 +2079,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   ];
 
   // Installed community extensions
-  let extensionCommands: CommandInfo[] = [];
-  try {
-    extensionCommands = discoverInstalledExtensionCommands().map((ext) => ({
-      id: ext.id,
-      title: ext.title,
-      subtitle: ext.extensionTitle,
-      keywords: ext.keywords,
-      iconDataUrl: ext.iconDataUrl,
-      category: 'extension' as const,
-      path: `${ext.extName}/${ext.cmdName}`,
-      mode: ext.mode,
-      interval: ext.interval,
-      disabledByDefault: ext.disabledByDefault,
-      commandArgumentDefinitions: ext.commandArgumentDefinitions || [],
-      deeplink: ext.owner
-        ? `supercmd://extensions/${encodeURIComponent(ext.owner)}/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`
-        : `supercmd://extensions/${encodeURIComponent(ext.extName)}/${encodeURIComponent(ext.cmdName)}`,
-    }));
-  } catch (e) {
-    console.error('Failed to discover installed extensions:', e);
-  }
+  const extensionCommands = discoverExtensionCommandInfos();
 
   // Raycast-compatible script commands
-  let scriptCommands: CommandInfo[] = [];
-  try {
-    scriptCommands = discoverScriptCommands().map((script) => ({
-      id: script.id,
-      title: script.title,
-      subtitle: script.packageName,
-      keywords: script.keywords,
-      iconDataUrl: script.iconDataUrl,
-      iconEmoji: script.iconEmoji,
-      category: 'script' as const,
-      path: script.scriptPath,
-      mode: script.mode,
-      interval: script.interval,
-      needsConfirmation: script.needsConfirmation,
-      commandArgumentDefinitions: script.arguments.map((arg) => ({
-        name: arg.name,
-        required: arg.required,
-        type: arg.type,
-        placeholder: arg.placeholder,
-        title: arg.placeholder,
-        data: arg.data,
-      })),
-      deeplink: script.slug
-        ? `supercmd://script-commands/${encodeURIComponent(script.slug)}`
-        : undefined,
-    }));
-  } catch (e) {
-    console.error('Failed to discover script commands:', e);
-  }
+  const scriptCommands = discoverScriptCommandInfos();
 
-  let quickLinkCommands: CommandInfo[] = [];
-  try {
-    const quickLinks = getAllQuickLinks();
-    quickLinkCommands = await Promise.all(
-      quickLinks.map(async (quickLink) => {
-        const resolvedIconName = resolveQuickLinkIconName(quickLink.icon);
-        let iconDataUrl = resolveQuickLinkIconDataUrl(quickLink, resolvedIconName);
-
-        // Prefer real app icon for default quick-link icons so launcher search
-        // reflects the target application even when stored icon data is stale.
-        if (!resolvedIconName && quickLink.applicationPath) {
-          const resolvedAppIconDataUrl = await getIconDataUrl(quickLink.applicationPath);
-          if (resolvedAppIconDataUrl) {
-            iconDataUrl = resolvedAppIconDataUrl;
-          }
-        }
-
-        return {
-          id: getQuickLinkCommandId(quickLink.id),
-          title: quickLink.name,
-          subtitle: quickLink.applicationName || 'Quick Link',
-          keywords: buildQuickLinkKeywords(quickLink),
-          iconDataUrl,
-          iconName: iconDataUrl ? undefined : resolvedIconName,
-          category: 'system' as const,
-        };
-      })
-    );
-  } catch (e) {
-    console.error('Failed to discover quick links:', e);
-  }
+  const quickLinkCommands = await discoverQuickLinkCommandInfos();
 
   const allCommands = [...apps, ...settings, ...extensionCommands, ...scriptCommands, ...quickLinkCommands, ...systemCommands];
 
@@ -1974,47 +2128,13 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
     delete cmd._bundlePath;
   }
 
-  // Assign a universal deeplink to any launcher command that doesn't already
-  // have one (extensions + scripts keep their owner/slug-based schemes above).
-  // This lets apps, settings, system, and quick-link commands be copied and
-  // re-invoked via `supercmd://commands/<id>`.
-  for (const cmd of allCommands) {
-    if (!cmd.deeplink && cmd.id) {
-      cmd.deeplink = `supercmd://commands/${encodeURIComponent(cmd.id)}`;
-    }
-  }
-
-  // Runtime metadata overlays (used by updateCommandMetadata and inline scripts).
-  try {
-    const loadedSettings = loadSettings();
-    const commandMetadata = loadedSettings.commandMetadata || {};
-    const commandAliases = loadedSettings.commandAliases || {};
-    for (const cmd of allCommands) {
-      if (!(cmd.category === 'script' && cmd.mode !== 'inline')) {
-        const subtitle = String(commandMetadata[cmd.id]?.subtitle || '').trim();
-        if (subtitle) {
-          cmd.subtitle = subtitle;
-        }
-      }
-      const alias = String(commandAliases[cmd.id] || '').trim();
-      if (alias) {
-        cmd.keywords = Array.from(new Set([...(cmd.keywords || []), alias]));
-      }
-    }
-  } catch {}
-
-  cachedCommands = allCommands;
-  cacheTimestamp = Date.now();
-  staleCommandsFallback = allCommands;
+  publishCommandCache(allCommands);
 
   console.log(
     `Discovered ${apps.length} apps, ${settings.length} settings panes, ${extensionCommands.length} extension commands, ${scriptCommands.length} script commands, ${quickLinkCommands.length} quick links in ${Date.now() - t0}ms`
   );
 
-  // Persist to disk so the next startup can serve commands instantly.
-  saveCommandsDiskCache(allCommands);
-
-  return cachedCommands;
+  return allCommands;
 }
 
 function ensureBackgroundRefreshForStaleCache(): void {
@@ -2042,6 +2162,34 @@ export async function refreshCommandsNow(): Promise<CommandInfo[]> {
     inflightDiscovery = null;
   });
   return inflightDiscovery;
+}
+
+export async function refreshCommandsForExtensionChange(): Promise<CommandInfo[]> {
+  if (!cachedCommands && !staleCommandsFallback) {
+    return refreshCommandsNow();
+  }
+
+  if (inflightDiscovery) {
+    try {
+      await inflightDiscovery;
+    } catch (error) {
+      console.warn('[Commands] Inflight refresh failed before extension refresh:', error);
+    }
+  }
+
+  const baseCommands = cachedCommands || staleCommandsFallback;
+  if (!baseCommands) {
+    return refreshCommandsNow();
+  }
+
+  const t0 = Date.now();
+  const extensionCommands = discoverExtensionCommandInfos();
+  const nextCommands = rebuildCommandsWithFreshExtensions(baseCommands, extensionCommands);
+  const refreshed = publishCommandCache(nextCommands);
+  console.log(
+    `[Commands] Refreshed ${extensionCommands.length} extension commands from cached app/settings base in ${Date.now() - t0}ms`
+  );
+  return refreshed;
 }
 
 export async function getAvailableCommands(): Promise<CommandInfo[]> {

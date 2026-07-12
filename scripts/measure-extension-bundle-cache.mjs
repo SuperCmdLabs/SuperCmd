@@ -94,6 +94,7 @@ export async function bundleExtensionRunner(userDataDir) {
     entryPoints: [path.join(root, 'src/main/extension-runner.ts')],
     outfile: outFile,
     bundle: true,
+    external: ['esbuild'],
     platform: 'node',
     format: 'cjs',
     target: 'node20',

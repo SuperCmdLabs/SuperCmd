@@ -4,19 +4,35 @@
  * Extracted registry/grouping logic for the grid runtime container.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GridItemRegistration, GridRegistryAPI } from './grid-runtime-items';
 
 export function useGridRegistry() {
   const registryRef = useRef(new Map<string, GridItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
+  const mountedRef = useRef(true);
   const pendingRef = useRef(false);
   const lastSnapshotRef = useRef('');
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      pendingRef.current = false;
+      registryRef.current.clear();
+      lastSnapshotRef.current = '';
+    };
+  }, []);
+
   const scheduleRegistryUpdate = useCallback(() => {
-    if (pendingRef.current) return;
+    if (!mountedRef.current || pendingRef.current) return;
     pendingRef.current = true;
     queueMicrotask(() => {
+      if (!mountedRef.current) {
+        pendingRef.current = false;
+        return;
+      }
       pendingRef.current = false;
       const snapshot = Array.from(registryRef.current.values())
         .map((entry) => {
@@ -35,6 +51,7 @@ export function useGridRegistry() {
   const registryAPI = useMemo<GridRegistryAPI>(
     () => ({
       set(id, data) {
+        if (!mountedRef.current) return;
         const existing = registryRef.current.get(id);
         if (existing) {
           existing.props = data.props;
@@ -46,6 +63,7 @@ export function useGridRegistry() {
         scheduleRegistryUpdate();
       },
       delete(id) {
+        if (!mountedRef.current) return;
         if (!registryRef.current.has(id)) return;
         registryRef.current.delete(id);
         scheduleRegistryUpdate();

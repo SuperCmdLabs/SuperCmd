@@ -6,7 +6,10 @@
 
 import * as https from 'https';
 import * as http from 'http';
+import { TextDecoder } from 'util';
 import type { AISettings } from './settings-store';
+
+export const AI_STREAM_PARSER_MAX_BUFFER_CHARS = 4 * 1024 * 1024;
 
 export interface AIRequestOptions {
   prompt: string;
@@ -687,6 +690,29 @@ interface HttpRequestOptions {
 function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const mod = opts.useHttps ? https : http;
+    let settled = false;
+    let onAbort: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (opts.signal && onAbort) {
+        opts.signal.removeEventListener('abort', onAbort);
+        onAbort = null;
+      }
+    };
+
+    const finish = <T>(settle: (value: T) => void, value: T, shouldCleanup = true) => {
+      if (settled) return;
+      settled = true;
+      if (shouldCleanup) cleanup();
+      settle(value);
+    };
+
+    const cleanupAfterResponse = (res: http.IncomingMessage) => {
+      const cleanupOnce = () => cleanup();
+      res.once('end', cleanupOnce);
+      res.once('close', cleanupOnce);
+      res.once('error', cleanupOnce);
+    };
 
     const reqOpts: https.RequestOptions = {
       hostname: opts.hostname,
@@ -701,25 +727,31 @@ function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
-          reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 500)}`));
+          finish(reject, new Error(`HTTP ${res.statusCode}: ${body.slice(0, 500)}`));
         });
         return;
       }
-      resolve(res);
+      cleanupAfterResponse(res);
+      finish(resolve, res, false);
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      finish(reject, err);
+    });
 
     if (opts.signal) {
       if (opts.signal.aborted) {
+        cleanup();
+        finish(reject, new Error('Request aborted'));
         req.destroy();
-        reject(new Error('Request aborted'));
         return;
       }
-      opts.signal.addEventListener('abort', () => {
+      onAbort = () => {
+        cleanup();
+        finish(reject, new Error('Request aborted'));
         req.destroy();
-        reject(new Error('Request aborted'));
-      }, { once: true });
+      };
+      opts.signal.addEventListener('abort', onAbort, { once: true });
     }
 
     req.write(opts.body);
@@ -740,13 +772,15 @@ async function* parseSSE(
   extractChunk: (data: string) => string | null
 ): AsyncGenerator<string> {
   let buffer = '';
+  const decoder = new TextDecoder('utf-8');
 
-  for await (const rawChunk of response) {
-    buffer += rawChunk.toString();
+  const assertBufferWithinLimit = () => {
+    if (buffer.length > AI_STREAM_PARSER_MAX_BUFFER_CHARS) {
+      throw new Error(`AI stream parser exceeded ${AI_STREAM_PARSER_MAX_BUFFER_CHARS} buffered characters without a line break`);
+    }
+  };
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // keep incomplete line
-
+  function* processCompleteLines(lines: string[]): Generator<string> {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
@@ -754,6 +788,27 @@ async function* parseSSE(
       const text = extractChunk(data);
       if (text) yield text;
     }
+  }
+
+  for await (const rawChunk of response) {
+    buffer += typeof rawChunk === 'string'
+      ? rawChunk
+      : decoder.decode(rawChunk as Uint8Array, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // keep incomplete line
+    assertBufferWithinLimit();
+
+    yield* processCompleteLines(lines);
+  }
+
+  const remainingDecoded = decoder.decode();
+  if (remainingDecoded) {
+    buffer += remainingDecoded;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    assertBufferWithinLimit();
+    yield* processCompleteLines(lines);
   }
 
   // Process remaining buffer
@@ -772,13 +827,15 @@ async function* parseNDJSON(
   extractChunk: (obj: any) => string | null
 ): AsyncGenerator<string> {
   let buffer = '';
+  const decoder = new TextDecoder('utf-8');
 
-  for await (const rawChunk of response) {
-    buffer += rawChunk.toString();
+  const assertBufferWithinLimit = () => {
+    if (buffer.length > AI_STREAM_PARSER_MAX_BUFFER_CHARS) {
+      throw new Error(`AI stream parser exceeded ${AI_STREAM_PARSER_MAX_BUFFER_CHARS} buffered characters without a line break`);
+    }
+  };
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
+  function* processCompleteLines(lines: string[]): Generator<string> {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -790,6 +847,27 @@ async function* parseNDJSON(
         // skip malformed lines
       }
     }
+  }
+
+  for await (const rawChunk of response) {
+    buffer += typeof rawChunk === 'string'
+      ? rawChunk
+      : decoder.decode(rawChunk as Uint8Array, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    assertBufferWithinLimit();
+
+    yield* processCompleteLines(lines);
+  }
+
+  const remainingDecoded = decoder.decode();
+  if (remainingDecoded) {
+    buffer += remainingDecoded;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    assertBufferWithinLimit();
+    yield* processCompleteLines(lines);
   }
 
   if (buffer.trim()) {
@@ -857,6 +935,23 @@ export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
   const body = Buffer.concat(parts);
 
   return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let onAbort: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (opts.signal && onAbort) {
+        opts.signal.removeEventListener('abort', onAbort);
+        onAbort = null;
+      }
+    };
+
+    const finish = <T>(settle: (value: T) => void, value: T) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      settle(value);
+    };
+
     const req = https.request(
       {
         hostname: 'api.openai.com',
@@ -873,26 +968,29 @@ export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
         res.on('data', (chunk) => { responseBody += chunk; });
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`Whisper API HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+            finish(reject, new Error(`Whisper API HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
             return;
           }
-          resolve(responseBody.trim());
+          finish(resolve, responseBody.trim());
         });
       }
     );
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      finish(reject, err);
+    });
 
     if (opts.signal) {
       if (opts.signal.aborted) {
+        finish(reject, new Error('Transcription aborted'));
         req.destroy();
-        reject(new Error('Transcription aborted'));
         return;
       }
-      opts.signal.addEventListener('abort', () => {
+      onAbort = () => {
+        finish(reject, new Error('Transcription aborted'));
         req.destroy();
-        reject(new Error('Transcription aborted'));
-      }, { once: true });
+      };
+      opts.signal.addEventListener('abort', onAbort, { once: true });
     }
 
     req.write(body);

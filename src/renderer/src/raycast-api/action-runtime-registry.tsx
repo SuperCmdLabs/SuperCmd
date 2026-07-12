@@ -348,14 +348,30 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
   function useCollectedActions() {
     const registryRef = useRef(new Map<string, ActionRegistration>());
     const [version, setVersion] = useState(0);
+    const mountedRef = useRef(true);
     const pendingRef = useRef(false);
     const lastSnapshotRef = useRef('');
 
+    useEffect(() => {
+      mountedRef.current = true;
+
+      return () => {
+        mountedRef.current = false;
+        pendingRef.current = false;
+        registryRef.current.clear();
+        lastSnapshotRef.current = '';
+      };
+    }, []);
+
     const scheduleUpdate = useCallback(() => {
-      if (pendingRef.current) return;
+      if (!mountedRef.current || pendingRef.current) return;
 
       pendingRef.current = true;
       queueMicrotask(() => {
+        if (!mountedRef.current) {
+          pendingRef.current = false;
+          return;
+        }
         pendingRef.current = false;
         const entries = Array.from(registryRef.current.values());
         const snapshot = entries.map((entry) => `${entry.id}:${entry.title}:${entry.sectionTitle || ''}`).join('|');
@@ -369,6 +385,7 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
     const registryAPI = useMemo<ActionRegistryAPI>(
       () => ({
         register(id, data) {
+          if (!mountedRef.current) return;
           const existing = registryRef.current.get(id);
           if (existing) {
             existing.title = data.title;
@@ -384,6 +401,7 @@ export function createActionRegistryRuntime(deps: RegistryDeps) {
           scheduleUpdate();
         },
         unregister(id) {
+          if (!mountedRef.current) return;
           if (!registryRef.current.has(id)) return;
           registryRef.current.delete(id);
           scheduleUpdate();

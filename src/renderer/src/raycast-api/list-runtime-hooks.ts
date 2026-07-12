@@ -4,7 +4,7 @@
  * Extracted list registry/grouping helpers to keep List container module small.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ItemRegistration, ListRegistryAPI } from './list-runtime-types';
 
 function getReactTypeName(type: any): string {
@@ -45,13 +45,29 @@ function buildSnapshotSignature(value: unknown, seen = new WeakSet<object>()): s
 export function useListRegistry() {
   const registryRef = useRef(new Map<string, ItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
+  const mountedRef = useRef(true);
   const pendingRef = useRef(false);
   const lastSnapshotRef = useRef('');
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      pendingRef.current = false;
+      registryRef.current.clear();
+      lastSnapshotRef.current = '';
+    };
+  }, []);
+
   const scheduleRegistryUpdate = useCallback(() => {
-    if (pendingRef.current) return;
+    if (!mountedRef.current || pendingRef.current) return;
     pendingRef.current = true;
     queueMicrotask(() => {
+      if (!mountedRef.current) {
+        pendingRef.current = false;
+        return;
+      }
       pendingRef.current = false;
       const snapshot = Array.from(registryRef.current.values()).map((item) => {
         const actionType = item.props.actions?.type as any;
@@ -78,6 +94,7 @@ export function useListRegistry() {
 
   const registryAPI = useMemo<ListRegistryAPI>(() => ({
     set(id, data) {
+      if (!mountedRef.current) return;
       const existing = registryRef.current.get(id);
       if (existing) {
         // Hot path: an unrelated re-render (e.g. hover changing selection)
@@ -98,6 +115,7 @@ export function useListRegistry() {
       scheduleRegistryUpdate();
     },
     delete(id) {
+      if (!mountedRef.current) return;
       if (!registryRef.current.has(id)) return;
       registryRef.current.delete(id);
       scheduleRegistryUpdate();

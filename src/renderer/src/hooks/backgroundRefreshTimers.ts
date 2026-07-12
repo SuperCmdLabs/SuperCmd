@@ -27,6 +27,22 @@ export interface BackgroundRefreshTimerReconcileOptions<TTimerId> {
   clearTimer: (timerId: TTimerId) => void;
 }
 
+export type BackgroundRefreshTick = () => Promise<void> | void;
+
+export function createInFlightBackgroundRefreshTick(runTick: BackgroundRefreshTick): () => void {
+  let inFlight = false;
+
+  return () => {
+    if (inFlight) return;
+
+    inFlight = true;
+    void Promise.resolve()
+      .then(runTick)
+      .finally(() => {
+        inFlight = false;
+      });
+  };
+}
 export function parseExtensionCommandPath(pathValue: string): { extName: string; cmdName: string } | null {
   const rawPath = String(pathValue || '').trim();
   const separatorIndex = rawPath.indexOf('/');

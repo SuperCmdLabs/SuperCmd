@@ -16,10 +16,21 @@ import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import * as RaycastAPI from './raycast-api';
 import { NavigationContext, setExtensionContext, setGlobalNavigation, ExtensionContextType, ExtensionInfoReactContext } from './raycast-api';
 import { withExtensionContext } from './raycast-api/context-scope-runtime';
+import { installExtensionFetchBridge } from './extension-fetch-bridge';
 import { getCompiledExtensionWrapper } from './utils/extension-wrapper-cache';
 
 // Also import @raycast/utils stubs from our shim
 import * as RaycastUtils from './raycast-api';
+
+let extensionRuntimeRequestSeq = 0;
+
+function createExtensionRuntimeRequestId(prefix: string): string {
+  const randomId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `${prefix}:${Date.now()}:${++extensionRuntimeRequestSeq}:${randomId}`;
+}
 
 // ─── React Module for Extensions ────────────────────────────────────
 // Extensions MUST use the exact same React instance as the host app.
@@ -2085,7 +2096,8 @@ const childProcessStub = {
     return childProcessStub._isGitInvocation(commandOrFile, execArgs)
       && childProcessStub._isBenignMissingPathError(message);
   },
-  exec: (...args: any[]) => {
+  exec: (...args: any[]) => childProcessStub._execWithRegistry(undefined, ...args),
+  _execWithRegistry: (registry: TimerRegistry | undefined, ...args: any[]) => {
     // Parse arguments: exec(command[, options][, callback])
     const command = args[0];
     let options: any = {};
@@ -2100,7 +2112,7 @@ const childProcessStub = {
       const { file, args: execArgs } = resolveExecShellLaunch(normalizedCommand, options?.shell);
       let stdout = '';
       let stderr = '';
-      const spawned = childProcessStub.spawn(file, execArgs, {
+      const spawned = childProcessStub._spawnWithRegistry(registry, file, execArgs, {
         shell: false,
         env: options?.env,
         cwd: options?.cwd,
@@ -2179,7 +2191,8 @@ const childProcessStub = {
     }
     return BufferPolyfill.from(result?.stdout || '');
   },
-  execFile: (...args: any[]) => {
+  execFile: (...args: any[]) => childProcessStub._execFileWithRegistry(undefined, ...args),
+  _execFileWithRegistry: (registry: TimerRegistry | undefined, ...args: any[]) => {
     // Parse arguments: execFile(file[, args][, options][, callback])
     const file = resolveExecutablePath(args[0]);
     let execArgs: string[] = [];
@@ -2202,7 +2215,7 @@ const childProcessStub = {
     if ((window as any).electron?.spawnProcess) {
       let stdout = '';
       let stderr = '';
-      const spawned = childProcessStub.spawn(file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd });
+      const spawned = childProcessStub._spawnWithRegistry(registry, file, execArgs, { shell: false, env: options?.env, cwd: options?.cwd });
       cp.stdin = spawned.stdin;
       cp.stdout = spawned.stdout;
       cp.stderr = spawned.stderr;
@@ -2290,7 +2303,8 @@ const childProcessStub = {
     if (options?.encoding) return result.stdout || '';
     return BufferPolyfill.from(result.stdout || '');
   },
-  spawn: (...args: any[]) => {
+  spawn: (...args: any[]) => childProcessStub._spawnWithRegistry(undefined, ...args),
+  _spawnWithRegistry: (registry: TimerRegistry | undefined, ...args: any[]) => {
     const file = resolveExecutablePath(args[0]);
     const spawnArgs = Array.isArray(args[1]) ? args[1] : [];
     const options = (typeof args[2] === 'object' && args[2]) ? args[2] : {};
@@ -2301,7 +2315,18 @@ const childProcessStub = {
       // This is the generic solution for all extensions using child_process.spawn with progressive output.
       let pid: number | null = null;
       const cleanups: Array<() => void> = [];
-      const cleanup = () => { cleanups.forEach(fn => fn()); cleanups.length = 0; };
+      let untrackLifecycleChildProcess: (() => void) | null = null;
+      let killWhenPidArrives = false;
+      let disposedByLifecycle = false;
+      const cleanup = () => {
+        if (untrackLifecycleChildProcess) {
+          const untrack = untrackLifecycleChildProcess;
+          untrackLifecycleChildProcess = null;
+          untrack();
+        }
+        cleanups.forEach(fn => fn());
+        cleanups.length = 0;
+      };
       let didHandleTerminalEvent = false;
       type PendingSpawnEvent =
         | { kind: 'stdout'; p: number; data: any; seq?: number }
@@ -2348,6 +2373,7 @@ const childProcessStub = {
         cp.emit('exit', 1, null);
       };
       const queueOrProcess = (event: PendingSpawnEvent) => {
+        if (disposedByLifecycle) return;
         if (pid === null) {
           pendingEvents.push(event);
           return;
@@ -2401,8 +2427,19 @@ const childProcessStub = {
       cp.kill = (signal?: string | number) => {
         cp.killed = true;
         if (pid !== null) electron.killSpawnProcess?.(pid, signal);
+        else killWhenPidArrives = true;
         return pid !== null;
       };
+      if (registry) {
+        untrackLifecycleChildProcess = trackChildProcess(registry, {
+          cleanup,
+          kill: () => {
+            disposedByLifecycle = true;
+            cp.kill('SIGTERM');
+          },
+          getPid: () => pid,
+        });
+      }
 
       // Wire up stdin forwarding to the main process
       const stdinQueue: Array<{ data?: any; end?: boolean }> = [];
@@ -2443,10 +2480,15 @@ const childProcessStub = {
       }).then((result: { pid: number }) => {
         pid = result.pid;
         cp.pid = pid;
+        if (killWhenPidArrives) {
+          cp.kill('SIGTERM');
+          return;
+        }
         flushStdinQueue();
         flushPendingEvents();
       }).catch((err: any) => {
         cleanup();
+        if (disposedByLifecycle) return;
         const message = String(err?.message || err || 'spawn failed');
         cp.stderr.emit('data', BufferPolyfill.from(message));
         cp.emit('error', new Error(message));
@@ -2528,6 +2570,16 @@ const childProcessStub = {
     return createStubChildProcess();
   },
 };
+
+function createExtensionChildProcessStub(registry: TimerRegistry | undefined): any {
+  if (!registry) return childProcessStub;
+  return {
+    ...childProcessStub,
+    exec: (...args: any[]) => childProcessStub._execWithRegistry(registry, ...args),
+    execFile: (...args: any[]) => childProcessStub._execFileWithRegistry(registry, ...args),
+    spawn: (...args: any[]) => childProcessStub._spawnWithRegistry(registry, ...args),
+  };
+}
 
 // ── timers stubs ────────────────────────────────────────────────
 const timersStub = {
@@ -3121,14 +3173,46 @@ const nodeBuiltinStubs: Record<string, any> = {
             if (typeof binaryDownloader !== 'function') {
               throw new Error('Binary download bridge unavailable');
             }
-            rawBytes = await Promise.race([
-              binaryDownloader(resolvedUrl),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('Binary download timed out')), 45_000)
-              ),
-            ]);
+            const requestId = createExtensionRuntimeRequestId('axiosBinary');
+            const cancelDownload = () => {
+              (window as any).electron?.cancelHttpRequest?.(requestId);
+            };
+            let timeoutId: ReturnType<typeof setTimeout> | undefined;
+            let abortListener: (() => void) | undefined;
+            try {
+              rawBytes = await Promise.race([
+                binaryDownloader(resolvedUrl, requestId),
+                new Promise<never>((_, reject) => {
+                  timeoutId = setTimeout(() => {
+                    cancelDownload();
+                    reject(new Error('Binary download timed out'));
+                  }, 45_000);
+                }),
+                config?.signal
+                  ? new Promise<never>((_, reject) => {
+                    abortListener = () => {
+                      cancelDownload();
+                      const err = new Error('Binary download aborted');
+                      err.name = 'AbortError';
+                      reject(err);
+                    };
+                    if (config.signal.aborted) {
+                      abortListener();
+                      return;
+                    }
+                    config.signal.addEventListener('abort', abortListener, { once: true });
+                  })
+                  : new Promise<never>(() => {}),
+              ]);
+            } finally {
+              if (timeoutId) clearTimeout(timeoutId);
+              if (abortListener && config?.signal) {
+                config.signal.removeEventListener('abort', abortListener);
+              }
+            }
           } catch (e: any) {
             const err: any = new Error(e?.message || 'Download failed');
+            if (e?.name) err.name = e.name;
             err.isAxiosError = true;
             throw err;
           }
@@ -3330,9 +3414,15 @@ function isNodeBuiltinRequest(name: string): boolean {
   return false;
 }
 
+const SUPERCMD_BUILTIN_FACADE_MODULES = new Set([
+  'fs',
+  'fs/promises',
+  'child_process',
+]);
+
 function shouldUseSuperCmdBuiltinFacade(name: string): boolean {
   const normalized = name.startsWith('node:') ? name.slice(5) : name;
-  return normalized === 'fs' || normalized === 'fs/promises' || normalized === 'child_process';
+  return SUPERCMD_BUILTIN_FACADE_MODULES.has(normalized);
 }
 
 const superCmdBuiltinFacadeCache = new Map<string, any>();
@@ -3597,145 +3687,502 @@ function ensureGlobals() {
 
   // fetch bridge — route extension HTTP(S) through main process to avoid CORS.
   // Keep native fetch for non-HTTP URLs and unsupported body types.
-  if (!g.__SUPERCMD_NATIVE_FETCH && typeof g.fetch === 'function') {
-    g.__SUPERCMD_NATIVE_FETCH = g.fetch.bind(g);
-  }
-  if (!g.__SUPERCMD_FETCH_PATCHED) {
-    const nativeFetch = g.__SUPERCMD_NATIVE_FETCH;
-    const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
-    const toHeadersObject = (headersLike: any): Record<string, string> => {
-      const out: Record<string, string> = {};
-      if (!headersLike) return out;
-      try {
-        const normalized = new Headers(headersLike as HeadersInit);
-        normalized.forEach((v, k) => {
-          out[k] = v;
-        });
-      } catch {
-        if (typeof headersLike === 'object') {
-          for (const [k, v] of Object.entries(headersLike)) {
-            out[k] = String(v);
-          }
-        }
-      }
-      return out;
-    };
-    const normalizeBody = async (body: any): Promise<string | undefined> => {
-      if (body == null) return undefined;
-      if (typeof body === 'string') return body;
-      if (body instanceof URLSearchParams) return body.toString();
-      if (body instanceof Blob) return await body.text();
-      if (typeof body === 'object') return JSON.stringify(body);
-      return String(body);
-    };
+  installExtensionFetchBridge(g);
+}
 
-    g.fetch = async (input: any, init?: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input?.url || String(input ?? '');
+interface TrackedChildProcess {
+  cleanup: () => void;
+  kill: () => void;
+  getPid?: () => number | null;
+}
 
-      // Only proxy HTTP(S) requests.
-      if (!isHttpUrl(url) || !(window as any).electron?.httpRequest) {
-        return typeof nativeFetch === 'function' ? nativeFetch(input, init) : fetch(input, init);
-      }
+type ExtensionTimerHandle = any;
 
-      // FormData/streams are not representable via current IPC payload. Fall back.
-      const requestBody = init?.body;
-      if (
-        requestBody instanceof FormData ||
-        requestBody instanceof ReadableStream ||
-        (typeof requestBody === 'object' && requestBody?.getReader)
-      ) {
-        return typeof nativeFetch === 'function' ? nativeFetch(input, init) : fetch(input, init);
-      }
-
-      const method = (init?.method || input?.method || 'GET').toUpperCase();
-      const headers = {
-        ...toHeadersObject(input?.headers),
-        ...toHeadersObject(init?.headers),
-      };
-      const body = await normalizeBody(requestBody);
-
-      const binaryDownloader = (window as any).electron?.httpDownloadBinary;
-      const canDownloadBinary = method === 'GET' && typeof binaryDownloader === 'function';
-      const ipcRes = await (window as any).electron.httpRequest({ url, method, headers, body });
-
-      if (!ipcRes || ipcRes.status === 0) {
-        if (typeof nativeFetch === 'function') {
-          try {
-            return await nativeFetch(input, init);
-          } catch (nativeErr: any) {
-            const proxyMsg = ipcRes?.statusText || `Failed to fetch ${url}`;
-            const nativeMsg = nativeErr?.message || String(nativeErr);
-            throw new TypeError(`${proxyMsg}; native fetch fallback failed: ${nativeMsg}`);
-          }
-        }
-        throw new TypeError(ipcRes?.statusText || `Failed to fetch ${url}`);
-      }
-
-      const contentType = String(
-        ipcRes.headers?.['content-type'] ||
-        ipcRes.headers?.['Content-Type'] ||
-        ''
-      ).toLowerCase();
-      const requestAccept = String(headers?.Accept || headers?.accept || '').toLowerCase();
-      const looksLikeBinaryUrl = /\.(gif|png|apng|jpe?g|webp|bmp|ico|icns|tiff?|mp3|wav|ogg|aac|m4a|mp4|mov|webm|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|bz2|7z|rar)(?:[?#]|$)/i.test(url);
-      const isBinaryContentType =
-        /^image\/(?!svg\+xml)/i.test(contentType) ||
-        /^(audio|video|font)\//i.test(contentType) ||
-        /^application\/(?:octet-stream|pdf|zip|gzip|x-gzip|x-bzip|x-7z-compressed|x-rar-compressed)/i.test(contentType);
-      const prefersBinaryResponse = requestAccept.includes('image/') || requestAccept.includes('application/octet-stream');
-
-      let rawBytes: Uint8Array | null = null;
-      if (canDownloadBinary && (isBinaryContentType || prefersBinaryResponse || looksLikeBinaryUrl)) {
-        rawBytes = await binaryDownloader(url).catch(() => null as Uint8Array | null);
-      }
-
-      // Build Response with binary body when available, text otherwise.
-      const responseBody = rawBytes && rawBytes.length > 0 ? rawBytes : (ipcRes.bodyText ?? '');
-      const response = new Response(responseBody, {
-        status: ipcRes.status,
-        statusText: ipcRes.statusText || '',
-        headers: ipcRes.headers || {},
-      });
-
-      try {
-        Object.defineProperty(response, 'url', { value: ipcRes.url || url });
-      } catch {}
-
-      return response;
-    };
-
-    g.__SUPERCMD_FETCH_PATCHED = true;
-  }
+interface TrackedEventListener {
+  target: EventTarget;
+  type: string;
+  listener: EventListenerOrEventListenerObject;
+  options?: boolean | AddEventListenerOptions;
+  capture: boolean;
 }
 
 /**
- * Per-ExtensionView registry of timer handles created by the extension's
- * sandboxed setInterval/setTimeout/requestAnimationFrame. Cleared on unmount
- * so a buggy extension (e.g. raycast/timers) cannot leak timers + retained
- * fibers into the host renderer.
+ * Per-ExtensionView registry of lifecycle handles created by the extension's
+ * sandboxed timers and scoped event targets. Cleared on unmount so a buggy
+ * extension (e.g. raycast/timers) cannot leak DOM handles + retained fibers
+ * into the host renderer.
  */
 export interface TimerRegistry {
-  intervals: Set<number>;
-  timeouts: Set<number>;
-  rafs: Set<number>;
+  intervals: Set<ExtensionTimerHandle>;
+  timeouts: Set<ExtensionTimerHandle>;
+  rafs: Set<ExtensionTimerHandle>;
+  intervalClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  timeoutClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  rafClearers: Map<ExtensionTimerHandle, (id: ExtensionTimerHandle) => void>;
+  eventListeners: Set<TrackedEventListener>;
+  childProcesses: Set<TrackedChildProcess>;
 }
 
 export function createTimerRegistry(): TimerRegistry {
-  return { intervals: new Set(), timeouts: new Set(), rafs: new Set() };
+  return {
+    intervals: new Set(),
+    timeouts: new Set(),
+    rafs: new Set(),
+    intervalClearers: new Map(),
+    timeoutClearers: new Map(),
+    rafClearers: new Map(),
+    eventListeners: new Set(),
+    childProcesses: new Set(),
+  };
 }
 
 export function clearTimerRegistry(registry: TimerRegistry): void {
-  registry.intervals.forEach((id) => window.clearInterval(id));
-  registry.timeouts.forEach((id) => window.clearTimeout(id));
-  registry.rafs.forEach((id) => window.cancelAnimationFrame(id));
+  Array.from(registry.childProcesses).forEach((entry) => {
+    try {
+      entry.cleanup();
+    } catch {}
+    try {
+      entry.kill();
+    } catch {}
+  });
+  Array.from(registry.eventListeners).forEach((entry) => {
+    try {
+      entry.target.removeEventListener(entry.type, entry.listener, entry.options);
+    } catch {}
+  });
+  Array.from(registry.intervals).forEach((id) => {
+    const clear = registry.intervalClearers.get(id) || window.clearInterval.bind(window);
+    clear(id);
+  });
+  Array.from(registry.timeouts).forEach((id) => {
+    const clear = registry.timeoutClearers.get(id) || window.clearTimeout.bind(window);
+    clear(id);
+  });
+  Array.from(registry.rafs).forEach((id) => {
+    const clear = registry.rafClearers.get(id) || window.cancelAnimationFrame.bind(window);
+    clear(id);
+  });
+  registry.eventListeners.clear();
   registry.intervals.clear();
   registry.timeouts.clear();
   registry.rafs.clear();
+  registry.intervalClearers.clear();
+  registry.timeoutClearers.clear();
+  registry.rafClearers.clear();
+  registry.childProcesses.clear();
+}
+
+function getEventListenerCapture(options?: boolean | AddEventListenerOptions): boolean {
+  if (typeof options === 'boolean') return options;
+  return Boolean(options?.capture);
+}
+
+function findTrackedEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | AddEventListenerOptions
+): TrackedEventListener | null {
+  if (!registry || !listener) return null;
+  const capture = getEventListenerCapture(options);
+  for (const entry of registry.eventListeners) {
+    if (
+      entry.target === target &&
+      entry.type === type &&
+      entry.listener === listener &&
+      entry.capture === capture
+    ) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function trackEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | AddEventListenerOptions
+): void {
+  if (!registry || !listener) return;
+  if (findTrackedEventListener(registry, target, type, listener, options)) return;
+  registry.eventListeners.add({
+    target,
+    type,
+    listener,
+    options,
+    capture: getEventListenerCapture(options),
+  });
+}
+
+function untrackEventListener(
+  registry: TimerRegistry | undefined,
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options?: boolean | EventListenerOptions
+): void {
+  if (!registry || !listener) return;
+  const capture = getEventListenerCapture(options);
+  Array.from(registry.eventListeners).forEach((entry) => {
+    if (
+      entry.target === target &&
+      entry.type === type &&
+      entry.listener === listener &&
+      entry.capture === capture
+    ) {
+      registry.eventListeners.delete(entry);
+    }
+  });
+}
+
+function shouldBindHostFunction(prop: string | symbol, value: Function): boolean {
+  if (typeof prop === 'string' && /^[A-Z]/.test(prop)) return false;
+  try {
+    if (/^class\s/.test(Function.prototype.toString.call(value))) return false;
+  } catch {}
+  return true;
+}
+
+function getWindowPeer(hostWindow: any, scopedWindow: any, prop: 'top' | 'parent' | 'opener'): any {
+  try {
+    const value = hostWindow?.[prop];
+    return value === hostWindow ? scopedWindow : value;
+  } catch {
+    return scopedWindow;
+  }
+}
+
+function createScopedHostProxy(
+  host: any,
+  registry: TimerRegistry | undefined,
+  kind: 'window' | 'document',
+  getScopedWindow: () => any,
+  getScopedDocument: () => any,
+  timerApi?: {
+    setInterval: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+    clearInterval: (id?: ExtensionTimerHandle) => void;
+    setTimeout: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+    clearTimeout: (id?: ExtensionTimerHandle) => void;
+    requestAnimationFrame: (callback: FrameRequestCallback) => ExtensionTimerHandle;
+    cancelAnimationFrame: (id?: ExtensionTimerHandle) => void;
+  }
+): any {
+  const boundFunctions = new WeakMap<Function, Function>();
+  const target = {};
+
+  // Extension code gets scoped window/document proxies so timer and listener
+  // APIs can be registered for lifecycle cleanup while ordinary host reads,
+  // writes, enumeration, and method calls continue to hit the real objects.
+  return new Proxy(target, {
+    get(_target, prop) {
+      if (kind === 'window') {
+        if (prop === 'window' || prop === 'self' || prop === 'globalThis' || prop === 'global') return getScopedWindow();
+        if (prop === 'top' || prop === 'parent' || prop === 'opener') return getWindowPeer(host, getScopedWindow(), prop);
+        if (prop === 'document') return getScopedDocument();
+        if (prop === 'setInterval') return timerApi?.setInterval;
+        if (prop === 'clearInterval') return timerApi?.clearInterval;
+        if (prop === 'setTimeout') return timerApi?.setTimeout;
+        if (prop === 'clearTimeout') return timerApi?.clearTimeout;
+        if (prop === 'requestAnimationFrame') return timerApi?.requestAnimationFrame;
+        if (prop === 'cancelAnimationFrame') return timerApi?.cancelAnimationFrame;
+      } else if (prop === 'defaultView') {
+        return getScopedWindow();
+      }
+
+      if (prop === 'addEventListener') {
+        return (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) => {
+          host.addEventListener(type, listener as any, options);
+          trackEventListener(registry, host, type, listener, options);
+        };
+      }
+
+      if (prop === 'removeEventListener') {
+        return (type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | EventListenerOptions) => {
+          host.removeEventListener(type, listener as any, options);
+          untrackEventListener(registry, host, type, listener, options);
+        };
+      }
+
+      const value = Reflect.get(host, prop, host);
+      if (typeof value !== 'function' || !shouldBindHostFunction(prop, value)) return value;
+      const cached = boundFunctions.get(value);
+      if (cached) return cached;
+      const bound = value.bind(host) as Function;
+      boundFunctions.set(value, bound);
+      return bound;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(host, prop, value, host);
+    },
+    has(_target, prop) {
+      return prop in host;
+    },
+    deleteProperty(_target, prop) {
+      return Reflect.deleteProperty(host, prop);
+    },
+    defineProperty(_target, prop, descriptor) {
+      return Reflect.defineProperty(host, prop, descriptor);
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(host, prop);
+      if (!descriptor) return undefined;
+      return { ...descriptor, configurable: true };
+    },
+    ownKeys() {
+      return Reflect.ownKeys(host);
+    },
+    getPrototypeOf() {
+      return Reflect.getPrototypeOf(host);
+    },
+  });
+}
+
+export function createExtensionLifecycleScope(
+  registry: TimerRegistry | undefined,
+  hostWindow: any = window,
+  hostDocument: any = hostWindow?.document ?? document
+): {
+  scopedWindow: any;
+  scopedDocument: any;
+  setInterval: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+  clearInterval: (id?: ExtensionTimerHandle) => void;
+  setTimeout: (handler: TimerHandler, timeout?: number, ...args: any[]) => ExtensionTimerHandle;
+  clearTimeout: (id?: ExtensionTimerHandle) => void;
+  requestAnimationFrame: (callback: FrameRequestCallback) => ExtensionTimerHandle;
+  cancelAnimationFrame: (id?: ExtensionTimerHandle) => void;
+  setImmediate: (callback: Function, ...args: any[]) => ExtensionTimerHandle;
+  clearImmediate: (id?: ExtensionTimerHandle) => void;
+} {
+  const nativeSetInterval = hostWindow.setInterval.bind(hostWindow);
+  const nativeClearInterval = hostWindow.clearInterval.bind(hostWindow);
+  const nativeSetTimeout = hostWindow.setTimeout.bind(hostWindow);
+  const nativeClearTimeout = hostWindow.clearTimeout.bind(hostWindow);
+  const nativeRequestAnimationFrame = hostWindow.requestAnimationFrame.bind(hostWindow);
+  const nativeCancelAnimationFrame = hostWindow.cancelAnimationFrame.bind(hostWindow);
+
+  const trackInterval = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
+    const id = nativeSetInterval(handler as any, timeout as any, ...args);
+    registry?.intervals.add(id);
+    registry?.intervalClearers.set(id, nativeClearInterval);
+    return id;
+  };
+  const trackClearInterval = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.intervals.delete(id);
+      registry?.intervalClearers.delete(id);
+    }
+    nativeClearInterval(id);
+  };
+  const untrackTimeout = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.timeouts.delete(id);
+      registry?.timeoutClearers.delete(id);
+    }
+  };
+  const runTimeoutHandler = (handler: TimerHandler, thisArg: any, callbackArgs: any[]) => {
+    if (typeof handler === 'function') {
+      return handler.apply(thisArg, callbackArgs);
+    }
+    const source = String(handler);
+    if (typeof hostWindow.eval === 'function') {
+      return hostWindow.eval(source);
+    }
+    return Function(source).call(thisArg);
+  };
+  const trackTimeout = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
+    let id: ExtensionTimerHandle | undefined;
+    const wrappedHandler = function (this: any, ...callbackArgs: any[]) {
+      untrackTimeout(id);
+      return runTimeoutHandler(handler, this, callbackArgs);
+    };
+    id = nativeSetTimeout(wrappedHandler as any, timeout as any, ...args);
+    registry?.timeouts.add(id);
+    registry?.timeoutClearers.set(id, nativeClearTimeout);
+    return id;
+  };
+  const trackClearTimeout = (id?: ExtensionTimerHandle) => {
+    untrackTimeout(id);
+    nativeClearTimeout(id);
+  };
+  const untrackRaf = (id?: ExtensionTimerHandle) => {
+    if (id != null) {
+      registry?.rafs.delete(id);
+      registry?.rafClearers.delete(id);
+    }
+  };
+  const trackRaf = (callback: FrameRequestCallback) => {
+    if (typeof callback !== 'function') {
+      return nativeRequestAnimationFrame(callback as any);
+    }
+    let id: ExtensionTimerHandle | undefined;
+    const wrappedCallback = function (this: any, timestamp: DOMHighResTimeStamp) {
+      untrackRaf(id);
+      callback.call(this, timestamp);
+    };
+    id = nativeRequestAnimationFrame(wrappedCallback);
+    registry?.rafs.add(id);
+    registry?.rafClearers.set(id, nativeCancelAnimationFrame);
+    return id;
+  };
+  const trackCancelRaf = (id?: ExtensionTimerHandle) => {
+    untrackRaf(id);
+    nativeCancelAnimationFrame(id);
+  };
+  const trackSetImmediate = (callback: Function, ...args: any[]) =>
+    trackTimeout(() => callback(...args), 0);
+  const trackClearImmediate = (id?: ExtensionTimerHandle) => trackClearTimeout(id);
+
+  const timerApi = {
+    setInterval: trackInterval,
+    clearInterval: trackClearInterval,
+    setTimeout: trackTimeout,
+    clearTimeout: trackClearTimeout,
+    requestAnimationFrame: trackRaf,
+    cancelAnimationFrame: trackCancelRaf,
+  };
+
+  let scopedWindow: any;
+  let scopedDocument: any;
+  scopedDocument = createScopedHostProxy(
+    hostDocument,
+    registry,
+    'document',
+    () => scopedWindow,
+    () => scopedDocument
+  );
+  scopedWindow = createScopedHostProxy(
+    hostWindow,
+    registry,
+    'window',
+    () => scopedWindow,
+    () => scopedDocument,
+    timerApi
+  );
+
+  return {
+    scopedWindow,
+    scopedDocument,
+    setInterval: trackInterval,
+    clearInterval: trackClearInterval,
+    setTimeout: trackTimeout,
+    clearTimeout: trackClearTimeout,
+    requestAnimationFrame: trackRaf,
+    cancelAnimationFrame: trackCancelRaf,
+    setImmediate: trackSetImmediate,
+    clearImmediate: trackClearImmediate,
+  };
+}
+
+function isExtensionTimerBuiltinRequest(name: string): boolean {
+  const normalized = name.startsWith('node:') ? name.slice(5) : name;
+  return normalized === 'timers' || normalized === 'timers/promises';
+}
+
+function createAbortError(): Error {
+  if (typeof DOMException === 'function') {
+    return new DOMException('The operation was aborted.', 'AbortError') as any;
+  }
+  const error = new Error('The operation was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function createExtensionTimersPromisesFacade(lifecycleScope: ReturnType<typeof createExtensionLifecycleScope>): any {
+  const wait = (ms?: number, value?: any, options?: { signal?: AbortSignal }) => {
+    const signal = options?.signal;
+    if (signal?.aborted) return Promise.reject(createAbortError());
+
+    return new Promise((resolve, reject) => {
+      let id: ExtensionTimerHandle | undefined;
+      const cleanup = () => {
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+      };
+      const onAbort = signal
+        ? () => {
+            lifecycleScope.clearTimeout(id);
+            cleanup();
+            reject(createAbortError());
+          }
+        : undefined;
+
+      if (signal && onAbort) signal.addEventListener('abort', onAbort, { once: true });
+      id = lifecycleScope.setTimeout(() => {
+        cleanup();
+        resolve(value);
+      }, ms as any);
+    });
+  };
+
+  const waitImmediate = (value?: any, options?: { signal?: AbortSignal }) => {
+    const signal = options?.signal;
+    if (signal?.aborted) return Promise.reject(createAbortError());
+
+    return new Promise((resolve, reject) => {
+      let id: ExtensionTimerHandle | undefined;
+      const cleanup = () => {
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+      };
+      const onAbort = signal
+        ? () => {
+            lifecycleScope.clearImmediate(id);
+            cleanup();
+            reject(createAbortError());
+          }
+        : undefined;
+
+      if (signal && onAbort) signal.addEventListener('abort', onAbort, { once: true });
+      id = lifecycleScope.setImmediate(() => {
+        cleanup();
+        resolve(value);
+      });
+    });
+  };
+
+  const interval = async function* (ms?: number, value?: any, options?: { signal?: AbortSignal }) {
+    while (!options?.signal?.aborted) {
+      yield await wait(ms, value, options);
+    }
+    throw createAbortError();
+  };
+
+  return {
+    setTimeout: wait,
+    setInterval: interval,
+    setImmediate: waitImmediate,
+    scheduler: { wait: (ms?: number, options?: { signal?: AbortSignal }) => wait(ms, undefined, options) },
+  };
+}
+
+function createExtensionTimerBuiltinFacade(
+  name: string,
+  lifecycleScope: ReturnType<typeof createExtensionLifecycleScope>
+): any {
+  const normalized = name.startsWith('node:') ? name.slice(5) : name;
+  if (normalized === 'timers/promises') {
+    return createExtensionTimersPromisesFacade(lifecycleScope);
+  }
+  return {
+    setTimeout: lifecycleScope.setTimeout,
+    clearTimeout: lifecycleScope.clearTimeout,
+    setInterval: lifecycleScope.setInterval,
+    clearInterval: lifecycleScope.clearInterval,
+    setImmediate: lifecycleScope.setImmediate,
+    clearImmediate: lifecycleScope.clearImmediate,
+  };
+}
+
+export function trackChildProcess(
+  registry: TimerRegistry | undefined,
+  childProcess: TrackedChildProcess
+): () => void {
+  if (!registry) return () => {};
+  registry.childProcesses.add(childProcess);
+  return () => {
+    registry.childProcesses.delete(childProcess);
+  };
 }
 
 /**
@@ -3962,6 +4409,8 @@ function loadExtensionExport(
     //
     // IMPORTANT: We track React requires to verify the same instance is always returned.
     let reactRequireCount = 0;
+    let lifecycleScope: ReturnType<typeof createExtensionLifecycleScope>;
+    const scopedTimerBuiltinFacades = new Map<string, any>();
     const fakeRequire: any = (name: string): any => {
       // Track all requires for debugging
       if (name === 'react' || name.startsWith('react/') || name === 'react-dom') {
@@ -4099,8 +4548,21 @@ function loadExtensionExport(
       // Prefer real Node (via the preload bridge) when the hosting window
       // has Node enabled. Falls back to the stub if the module isn't a
       // recognised built-in, or if real require throws.
+      if (timerRegistry && isExtensionTimerBuiltinRequest(name)) {
+        const normalizedTimerBuiltinName = name.startsWith('node:') ? name.slice(5) : name;
+        let facade = scopedTimerBuiltinFacades.get(normalizedTimerBuiltinName);
+        if (!facade) {
+          facade = createExtensionTimerBuiltinFacade(normalizedTimerBuiltinName, lifecycleScope);
+          scopedTimerBuiltinFacades.set(normalizedTimerBuiltinName, facade);
+        }
+        return facade;
+      }
       if (shouldUseSuperCmdBuiltinFacade(name)) {
-        const facade = getSuperCmdBuiltinFacade(name);
+        const normalizedBuiltinName = name.startsWith('node:') ? name.slice(5) : name;
+        if (normalizedBuiltinName === 'child_process') {
+          return createExtensionChildProcessStub(timerRegistry);
+        }
+        const facade = getSuperCmdBuiltinFacade(name) || nodeBuiltinStubs[name] || nodeBuiltinStubs[`node:${name}`];
         if (facade) return facade;
       }
       const realModule = tryRealNodeRequire(name);
@@ -4265,44 +4727,10 @@ function loadExtensionExport(
       throw new Error(`Unsupported dynamic import in extension runtime: ${id}`);
     };
 
-    // Sandboxed timer APIs — passed as named parameters so the extension's
-    // bundle resolves bare `setInterval`/`setTimeout`/`requestAnimationFrame`
-    // references against this scope instead of the host `window`. Handles are
-    // tracked in `timerRegistry` so the consumer (ExtensionView) can clear
-    // anything still pending on unmount, defending against extensions that
-    // forget their own cleanup (e.g. raycast/timers).
-    const trackInterval = (cb: any, ms?: any, ...rest: any[]) => {
-      const id = window.setInterval(cb as any, ms as any, ...rest);
-      timerRegistry?.intervals.add(id);
-      return id;
-    };
-    const trackClearInterval = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.intervals.delete(id);
-      window.clearInterval(id);
-    };
-    const trackTimeout = (cb: any, ms?: any, ...rest: any[]) => {
-      const id = window.setTimeout(cb as any, ms as any, ...rest);
-      timerRegistry?.timeouts.add(id);
-      return id;
-    };
-    const trackClearTimeout = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.timeouts.delete(id);
-      window.clearTimeout(id);
-    };
-    const trackRaf = (cb: FrameRequestCallback) => {
-      const id = window.requestAnimationFrame(cb);
-      timerRegistry?.rafs.add(id);
-      return id;
-    };
-    const trackCancelRaf = (id: any) => {
-      if (typeof id === 'number') timerRegistry?.rafs.delete(id);
-      window.cancelAnimationFrame(id);
-    };
-    // setImmediate / clearImmediate are Node-isms not on `window` — polyfill
-    // via setTimeout(0) and route through the same registry.
-    const trackSetImmediate = (cb: Function, ...args: any[]) =>
-      trackTimeout(() => cb(...args), 0);
-    const trackClearImmediate = (id: any) => trackClearTimeout(id);
+    // Sandboxed lifecycle APIs — passed as named parameters so the extension's
+    // bundle resolves bare timers and `window.*`/`document.*` event listeners
+    // against this ExtensionView instance instead of the host renderer globals.
+    lifecycleScope = createExtensionLifecycleScope(timerRegistry);
 
     // Execute the CJS bundle in a function scope.
     // We pass all the standard CJS arguments plus `process`, `Buffer`,
@@ -4335,16 +4763,18 @@ function loadExtensionExport(
       '/extension',
       bundleProcess,
       bundleBuffer,
-      globalThis,
-      globalThis,
-      trackSetImmediate,
-      trackClearImmediate,
-      trackInterval,
-      trackClearInterval,
-      trackTimeout,
-      trackClearTimeout,
-      trackRaf,
-      trackCancelRaf,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.setImmediate,
+      lifecycleScope.clearImmediate,
+      lifecycleScope.setInterval,
+      lifecycleScope.clearInterval,
+      lifecycleScope.setTimeout,
+      lifecycleScope.clearTimeout,
+      lifecycleScope.requestAnimationFrame,
+      lifecycleScope.cancelAnimationFrame,
+      lifecycleScope.scopedWindow,
+      lifecycleScope.scopedDocument,
       undefined, // navigator — see comment above
       scDynamicImport,
     );

@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
+import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow, refreshCommandsForExtensionChange } from './commands';
 import {
   loadSettings,
   saveSettings,
@@ -68,6 +68,13 @@ import {
   mergeAiChatSnapshot,
   upsertAiChatConversation,
 } from './ai-chat-store';
+import { decodeHttpResponseBodyBuffer } from './http-response-decode';
+import {
+  appendNativeHelperLineBuffer,
+  appendNativeHelperTextBuffer,
+  createNativeHelperReadinessWait,
+  type NativeHelperReadinessWait,
+} from './native-helper-lifecycle';
 import {
   getExtensionPreferences,
   getExtensionPreferencesSnapshot,
@@ -264,18 +271,30 @@ let parakeetServerStarting: Promise<void> | null = null;
 let parakeetServerBuffer = '';
 type PendingParakeetRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let parakeetPendingRequest: PendingParakeetRequest | null = null;
+let parakeetServerReadyWait: NativeHelperReadinessWait | null = null;
 
-function killParakeetServer(): void {
-  if (parakeetServerProcess) {
+const nativeHelperLineBufferTruncationWarnings = new Set<string>();
+
+function warnNativeHelperLineBufferTruncated(helperName: string): void {
+  if (nativeHelperLineBufferTruncationWarnings.has(helperName)) return;
+  nativeHelperLineBufferTruncationWarnings.add(helperName);
+  console.warn(`[${helperName}] Native helper output buffer exceeded limit; old data was discarded`);
+}
+
+function killParakeetServer(processToKill: any = parakeetServerProcess): void {
+  if (processToKill) {
     try {
-      parakeetServerProcess.stdin?.write('{"command":"exit"}\n');
-      parakeetServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    parakeetServerProcess = null;
   }
+  if (processToKill && parakeetServerProcess !== processToKill) return;
+  parakeetServerProcess = null;
   parakeetServerReady = false;
   parakeetServerStarting = null;
   parakeetServerBuffer = '';
+  parakeetServerReadyWait?.reject(new Error('Parakeet server killed'));
+  parakeetServerReadyWait = null;
   if (parakeetPendingRequest) {
     parakeetPendingRequest.reject(new Error('Parakeet server killed'));
     parakeetPendingRequest = null;
@@ -307,9 +326,12 @@ function ensureParakeetServer(): Promise<void> {
 
     child.on('exit', (code: number | null) => {
       console.log(`[Parakeet] Server process exited with code ${code}`);
+      if (parakeetServerProcess !== child) return;
       parakeetServerReady = false;
       parakeetServerProcess = null;
       parakeetServerStarting = null;
+      parakeetServerReadyWait?.reject(new Error(`Parakeet server exited with code ${code}`));
+      parakeetServerReadyWait = null;
       if (parakeetPendingRequest) {
         parakeetPendingRequest.reject(new Error(`Parakeet server exited with code ${code}`));
         parakeetPendingRequest = null;
@@ -317,9 +339,11 @@ function ensureParakeetServer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer) => {
-      parakeetServerBuffer += chunk.toString();
-      const lines = parakeetServerBuffer.split('\n');
-      parakeetServerBuffer = lines.pop() || '';
+      if (parakeetServerProcess !== child) return;
+      const result = appendNativeHelperLineBuffer(parakeetServerBuffer, chunk);
+      parakeetServerBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('Parakeet');
+      const lines = result.lines;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -327,6 +351,7 @@ function ensureParakeetServer(): Promise<void> {
           const json = JSON.parse(trimmed);
           if (json.ready) {
             parakeetServerReady = true;
+            parakeetServerReadyWait?.markReady();
             console.log('[Parakeet] Server ready (models loaded)');
             continue;
           }
@@ -344,25 +369,20 @@ function ensureParakeetServer(): Promise<void> {
     });
 
     // Wait for "ready" signal
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Parakeet server startup timed out (120s)'));
-        killParakeetServer();
-      }, 120_000);
-
-      const checkReady = setInterval(() => {
-        if (parakeetServerReady) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          resolve();
-        }
-        if (!parakeetServerProcess || parakeetServerProcess.killed) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          reject(new Error('Parakeet server process died during startup'));
-        }
-      }, 50);
+    const readyWait = createNativeHelperReadinessWait({
+      timeoutMs: 120_000,
+      timeoutMessage: 'Parakeet server startup timed out (120s)',
+      supersededMessage: 'Parakeet server startup superseded',
+      diedMessage: 'Parakeet server process died during startup',
+      isActive: () => parakeetServerProcess === child,
+      isKilled: () => child.killed,
+      kill: () => killParakeetServer(child),
     });
+    parakeetServerReadyWait = readyWait;
+    await readyWait.promise;
+    if (parakeetServerReadyWait === readyWait) {
+      parakeetServerReadyWait = null;
+    }
 
     parakeetServerStarting = null;
   })();
@@ -619,18 +639,22 @@ let qwen3ServerStarting: Promise<void> | null = null;
 let qwen3ServerBuffer = '';
 type PendingQwen3Request = { resolve: (json: any) => void; reject: (err: Error) => void };
 let qwen3PendingRequest: PendingQwen3Request | null = null;
+let qwen3ServerReadyWait: NativeHelperReadinessWait | null = null;
 
-function killQwen3Server(): void {
-  if (qwen3ServerProcess) {
+function killQwen3Server(processToKill: any = qwen3ServerProcess): void {
+  if (processToKill) {
     try {
-      qwen3ServerProcess.stdin?.write('{"command":"exit"}\n');
-      qwen3ServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    qwen3ServerProcess = null;
   }
+  if (processToKill && qwen3ServerProcess !== processToKill) return;
+  qwen3ServerProcess = null;
   qwen3ServerReady = false;
   qwen3ServerStarting = null;
   qwen3ServerBuffer = '';
+  qwen3ServerReadyWait?.reject(new Error('Qwen3 server killed'));
+  qwen3ServerReadyWait = null;
   if (qwen3PendingRequest) {
     qwen3PendingRequest.reject(new Error('Qwen3 server killed'));
     qwen3PendingRequest = null;
@@ -662,9 +686,12 @@ function ensureQwen3Server(): Promise<void> {
 
     child.on('exit', (code: number | null) => {
       console.log(`[Qwen3] Server process exited with code ${code}`);
+      if (qwen3ServerProcess !== child) return;
       qwen3ServerReady = false;
       qwen3ServerProcess = null;
       qwen3ServerStarting = null;
+      qwen3ServerReadyWait?.reject(new Error(`Qwen3 server exited with code ${code}`));
+      qwen3ServerReadyWait = null;
       if (qwen3PendingRequest) {
         qwen3PendingRequest.reject(new Error(`Qwen3 server exited with code ${code}`));
         qwen3PendingRequest = null;
@@ -672,9 +699,11 @@ function ensureQwen3Server(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer) => {
-      qwen3ServerBuffer += chunk.toString();
-      const lines = qwen3ServerBuffer.split('\n');
-      qwen3ServerBuffer = lines.pop() || '';
+      if (qwen3ServerProcess !== child) return;
+      const result = appendNativeHelperLineBuffer(qwen3ServerBuffer, chunk);
+      qwen3ServerBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('Qwen3');
+      const lines = result.lines;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -682,6 +711,7 @@ function ensureQwen3Server(): Promise<void> {
           const json = JSON.parse(trimmed);
           if (json.ready) {
             qwen3ServerReady = true;
+            qwen3ServerReadyWait?.markReady();
             console.log('[Qwen3] Server ready (models loaded)');
             continue;
           }
@@ -698,25 +728,20 @@ function ensureQwen3Server(): Promise<void> {
       }
     });
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Qwen3 server startup timed out (120s)'));
-        killQwen3Server();
-      }, 120_000);
-
-      const checkReady = setInterval(() => {
-        if (qwen3ServerReady) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          resolve();
-        }
-        if (!qwen3ServerProcess || qwen3ServerProcess.killed) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          reject(new Error('Qwen3 server process died during startup'));
-        }
-      }, 50);
+    const readyWait = createNativeHelperReadinessWait({
+      timeoutMs: 120_000,
+      timeoutMessage: 'Qwen3 server startup timed out (120s)',
+      supersededMessage: 'Qwen3 server startup superseded',
+      diedMessage: 'Qwen3 server process died during startup',
+      isActive: () => qwen3ServerProcess === child,
+      isKilled: () => child.killed,
+      kill: () => killQwen3Server(child),
     });
+    qwen3ServerReadyWait = readyWait;
+    await readyWait.promise;
+    if (qwen3ServerReadyWait === readyWait) {
+      qwen3ServerReadyWait = null;
+    }
 
     qwen3ServerStarting = null;
   })();
@@ -1153,18 +1178,22 @@ let whisperCppServerStarting: Promise<void> | null = null;
 let whisperCppServerBuffer = '';
 type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
+let whisperCppServerReadyWait: NativeHelperReadinessWait | null = null;
 
-function killWhisperCppServer(): void {
-  if (whisperCppServerProcess) {
+function killWhisperCppServer(processToKill: any = whisperCppServerProcess): void {
+  if (processToKill) {
     try {
-      whisperCppServerProcess.stdin?.write('{"command":"exit"}\n');
-      whisperCppServerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    whisperCppServerProcess = null;
   }
+  if (processToKill && whisperCppServerProcess !== processToKill) return;
+  whisperCppServerProcess = null;
   whisperCppServerReady = false;
   whisperCppServerStarting = null;
   whisperCppServerBuffer = '';
+  whisperCppServerReadyWait?.reject(new Error('Whisper.cpp server killed'));
+  whisperCppServerReadyWait = null;
   if (whisperCppPendingRequest) {
     whisperCppPendingRequest.reject(new Error('Whisper.cpp server killed'));
     whisperCppPendingRequest = null;
@@ -1193,9 +1222,12 @@ function ensureWhisperCppServer(): Promise<void> {
 
     child.on('exit', (code: number | null) => {
       console.log(`[Whisper][whisper.cpp] Server process exited with code ${code}`);
+      if (whisperCppServerProcess !== child) return;
       whisperCppServerReady = false;
       whisperCppServerProcess = null;
       whisperCppServerStarting = null;
+      whisperCppServerReadyWait?.reject(new Error(`Whisper.cpp server exited with code ${code}`));
+      whisperCppServerReadyWait = null;
       if (whisperCppPendingRequest) {
         whisperCppPendingRequest.reject(new Error(`Whisper.cpp server exited with code ${code}`));
         whisperCppPendingRequest = null;
@@ -1203,9 +1235,11 @@ function ensureWhisperCppServer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer | string) => {
-      whisperCppServerBuffer += chunk.toString();
-      const lines = whisperCppServerBuffer.split('\n');
-      whisperCppServerBuffer = lines.pop() || '';
+      if (whisperCppServerProcess !== child) return;
+      const result = appendNativeHelperLineBuffer(whisperCppServerBuffer, chunk);
+      whisperCppServerBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('Whisper.cpp');
+      const lines = result.lines;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -1213,6 +1247,7 @@ function ensureWhisperCppServer(): Promise<void> {
           const json = JSON.parse(trimmed);
           if (json.ready) {
             whisperCppServerReady = true;
+            whisperCppServerReadyWait?.markReady();
             console.log('[Whisper][whisper.cpp] Server ready (model loaded)');
             continue;
           }
@@ -1235,25 +1270,20 @@ function ensureWhisperCppServer(): Promise<void> {
     });
 
     // Wait for "ready" signal
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Whisper.cpp server startup timed out (60s)'));
-        killWhisperCppServer();
-      }, 60_000);
-
-      const checkReady = setInterval(() => {
-        if (whisperCppServerReady) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          resolve();
-        }
-        if (!whisperCppServerProcess || whisperCppServerProcess.killed) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          reject(new Error('Whisper.cpp server process died during startup'));
-        }
-      }, 50);
+    const readyWait = createNativeHelperReadinessWait({
+      timeoutMs: 60_000,
+      timeoutMessage: 'Whisper.cpp server startup timed out (60s)',
+      supersededMessage: 'Whisper.cpp server startup superseded',
+      diedMessage: 'Whisper.cpp server process died during startup',
+      isActive: () => whisperCppServerProcess === child,
+      isKilled: () => child.killed,
+      kill: () => killWhisperCppServer(child),
     });
+    whisperCppServerReadyWait = readyWait;
+    await readyWait.promise;
+    if (whisperCppServerReadyWait === readyWait) {
+      whisperCppServerReadyWait = null;
+    }
 
     whisperCppServerStarting = null;
   })();
@@ -1412,6 +1442,7 @@ let audioCapturerBuffer = '';
 let audioCapturerRecording = false;
 type PendingAudioCapturerRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let audioCapturerPendingRequest: PendingAudioCapturerRequest | null = null;
+let audioCapturerReadyWait: NativeHelperReadinessWait | null = null;
 
 type AudioCapturerMeter = { average: number; peak: number };
 let audioCapturerMeter: AudioCapturerMeter = { average: 0, peak: 0 };
@@ -1421,18 +1452,21 @@ function getAudioCapturerBinaryPath(): string {
   return getNativeBinaryPath('audio-capturer');
 }
 
-function killAudioCapturer(): void {
-  if (audioCapturerProcess) {
+function killAudioCapturer(processToKill: any = audioCapturerProcess): void {
+  if (processToKill) {
     try {
-      audioCapturerProcess.stdin?.write('{"command":"exit"}\n');
-      audioCapturerProcess.kill();
+      processToKill.stdin?.write('{"command":"exit"}\n');
+      processToKill.kill();
     } catch {}
-    audioCapturerProcess = null;
   }
+  if (processToKill && audioCapturerProcess !== processToKill) return;
+  audioCapturerProcess = null;
   audioCapturerReady = false;
   audioCapturerStarting = null;
   audioCapturerBuffer = '';
   audioCapturerRecording = false;
+  audioCapturerReadyWait?.reject(new Error('Audio capturer killed'));
+  audioCapturerReadyWait = null;
   if (audioCapturerPendingRequest) {
     audioCapturerPendingRequest.reject(new Error('Audio capturer killed'));
     audioCapturerPendingRequest = null;
@@ -1512,10 +1546,13 @@ function warmAudioCapturer(): Promise<void> {
 
     child.on('exit', (code: number | null) => {
       console.log(`[AudioCapturer] Process exited with code ${code}`);
+      if (audioCapturerProcess !== child) return;
       audioCapturerReady = false;
       audioCapturerProcess = null;
       audioCapturerStarting = null;
       audioCapturerRecording = false;
+      audioCapturerReadyWait?.reject(new Error(`Audio capturer exited with code ${code}`));
+      audioCapturerReadyWait = null;
       if (audioCapturerPendingRequest) {
         audioCapturerPendingRequest.reject(new Error(`Audio capturer exited with code ${code}`));
         audioCapturerPendingRequest = null;
@@ -1523,9 +1560,11 @@ function warmAudioCapturer(): Promise<void> {
     });
 
     child.stdout.on('data', (chunk: Buffer | string) => {
-      audioCapturerBuffer += chunk.toString();
-      const lines = audioCapturerBuffer.split('\n');
-      audioCapturerBuffer = lines.pop() || '';
+      if (audioCapturerProcess !== child) return;
+      const result = appendNativeHelperLineBuffer(audioCapturerBuffer, chunk);
+      audioCapturerBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('AudioCapturer');
+      const lines = result.lines;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -1534,6 +1573,7 @@ function warmAudioCapturer(): Promise<void> {
 
           if (json.ready) {
             audioCapturerReady = true;
+            audioCapturerReadyWait?.markReady();
             console.log('[AudioCapturer] Engine ready (mic hot)');
             continue;
           }
@@ -1579,25 +1619,20 @@ function warmAudioCapturer(): Promise<void> {
     child.stdin.write(JSON.stringify({ command: 'warmup' }) + '\n');
 
     // Wait for "ready" signal
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Audio capturer warmup timed out (30s)'));
-        killAudioCapturer();
-      }, 30_000);
-
-      const checkReady = setInterval(() => {
-        if (audioCapturerReady) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          resolve();
-        }
-        if (!audioCapturerProcess || audioCapturerProcess.killed) {
-          clearInterval(checkReady);
-          clearTimeout(timeout);
-          reject(new Error('Audio capturer process died during warmup'));
-        }
-      }, 50);
+    const readyWait = createNativeHelperReadinessWait({
+      timeoutMs: 30_000,
+      timeoutMessage: 'Audio capturer warmup timed out (30s)',
+      supersededMessage: 'Audio capturer warmup superseded',
+      diedMessage: 'Audio capturer process died during warmup',
+      isActive: () => audioCapturerProcess === child,
+      isKilled: () => child.killed,
+      kill: () => killAudioCapturer(child),
     });
+    audioCapturerReadyWait = readyWait;
+    await readyWait.promise;
+    if (audioCapturerReadyWait === readyWait) {
+      audioCapturerReadyWait = null;
+    }
 
     audioCapturerStarting = null;
   })();
@@ -5574,16 +5609,19 @@ async function ensureSpeechRecognitionAccess(prompt = true): Promise<SpeechRecog
     };
 
     proc.stdout.on('data', (chunk: Buffer | string) => {
-      stdoutBuffer += String(chunk || '');
-      const lines = stdoutBuffer.split('\n');
-      stdoutBuffer = lines.pop() || '';
+      const result = appendNativeHelperLineBuffer(stdoutBuffer, chunk);
+      stdoutBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('SpeechRecognitionPermission');
+      const lines = result.lines;
       for (const line of lines) {
         parseLine(line);
       }
     });
 
     proc.stderr.on('data', (chunk: Buffer | string) => {
-      stderrBuffer += String(chunk || '');
+      const result = appendNativeHelperTextBuffer(stderrBuffer, chunk);
+      stderrBuffer = result.buffer;
+      if (result.truncated) warnNativeHelperLineBufferTruncated('SpeechRecognitionPermission stderr');
     });
 
     proc.on('error', (error: Error) => {
@@ -5716,6 +5754,43 @@ function resolveElevenLabsTtsConfig(selectedModel: string): { modelId: string; v
   return { modelId, voiceId };
 }
 
+type BufferedRequestPart = Buffer;
+
+function getBufferedRequestPartsContentLength(parts: readonly BufferedRequestPart[]): number {
+  return parts.reduce((total, part) => total + part.length, 0);
+}
+
+function writeBufferedRequestParts(req: { write: (chunk: Buffer) => unknown; end: () => unknown }, parts: readonly BufferedRequestPart[]): void {
+  for (const part of parts) {
+    req.write(part);
+  }
+  req.end();
+}
+
+function collectBoundedResponseText(res: any, maxBytes = 1024 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const { StringDecoder } = require('string_decoder') as typeof import('string_decoder');
+    const decoder = new StringDecoder('utf8');
+    let remaining = maxBytes;
+    let text = '';
+
+    res.on('data', (chunk: Buffer | string) => {
+      if (remaining <= 0) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+      const next = buffer.length > remaining ? buffer.subarray(0, remaining) : buffer;
+      remaining -= next.length;
+      text += decoder.write(next);
+    });
+    res.on('error', reject);
+    res.on('end', () => {
+      if (remaining > 0) {
+        text += decoder.end();
+      }
+      resolve(text);
+    });
+  });
+}
+
 function transcribeAudioWithElevenLabs(opts: {
   audioBuffer: Buffer;
   apiKey: string;
@@ -5756,7 +5831,6 @@ function transcribeAudioWithElevenLabs(opts: {
   }
 
   parts.push(Buffer.from(`--${boundary}--\r\n`));
-  const body = Buffer.concat(parts);
 
   return new Promise<string>((resolve, reject) => {
     try {
@@ -5769,14 +5843,11 @@ function transcribeAudioWithElevenLabs(opts: {
           headers: {
             'xi-api-key': opts.apiKey,
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
-            'Content-Length': body.length,
+            'Content-Length': getBufferedRequestPartsContentLength(parts),
           },
         },
         (res: any) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            const responseBody = Buffer.concat(chunks).toString('utf-8');
+          collectBoundedResponseText(res).then((responseBody) => {
             if (res.statusCode && res.statusCode >= 400) {
               if (res.statusCode === 401 && responseBody.includes('detected_unusual_activity')) {
                 reject(new Error('ElevenLabs rejected this key due to account restrictions (detected_unusual_activity). Verify plan/account status in ElevenLabs dashboard.'));
@@ -5801,12 +5872,11 @@ function transcribeAudioWithElevenLabs(opts: {
               }
               resolve(text);
             }
-          });
+          }).catch(reject);
         }
       );
       req.on('error', reject);
-      req.write(body);
-      req.end();
+      writeBufferedRequestParts(req, parts);
     } catch (error) {
       reject(error);
     }
@@ -5843,7 +5913,6 @@ function transcribeAudioWithMistralVoxtral(opts: {
   }
 
   parts.push(Buffer.from(`--${boundary}--\r\n`));
-  const body = Buffer.concat(parts);
 
   return new Promise<string>((resolve, reject) => {
     try {
@@ -5856,14 +5925,11 @@ function transcribeAudioWithMistralVoxtral(opts: {
           headers: {
             'Authorization': `Bearer ${opts.apiKey}`,
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
-            'Content-Length': body.length,
+            'Content-Length': getBufferedRequestPartsContentLength(parts),
           },
         },
         (res: any) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            const responseBody = Buffer.concat(chunks).toString('utf-8');
+          collectBoundedResponseText(res).then((responseBody) => {
             if (res.statusCode && res.statusCode >= 400) {
               reject(new Error(`Mistral Voxtral STT HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
               return;
@@ -5890,15 +5956,14 @@ function transcribeAudioWithMistralVoxtral(opts: {
               }
               resolve(text);
             }
-          });
+          }).catch(reject);
         }
       );
       req.on('error', reject);
       req.setTimeout(60000, () => {
         req.destroy(new Error('Mistral Voxtral STT timed out.'));
       });
-      req.write(body);
-      req.end();
+      writeBufferedRequestParts(req, parts);
     } catch (error) {
       reject(error);
     }
@@ -5929,27 +5994,38 @@ function synthesizeElevenLabsToFile(opts: {
           },
         },
         (res: any) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            if (res.statusCode && res.statusCode >= 400) {
-              const responseText = Buffer.concat(chunks).toString('utf-8');
+          if (res.statusCode && res.statusCode >= 400) {
+            collectBoundedResponseText(res).then((responseText) => {
               if (res.statusCode === 401 && responseText.includes('detected_unusual_activity')) {
                 reject(new Error('ElevenLabs rejected this key due to account restrictions (detected_unusual_activity). Verify plan/account status in ElevenLabs dashboard.'));
                 return;
               }
               reject(new Error(`ElevenLabs TTS HTTP ${res.statusCode}: ${responseText.slice(0, 500)}`));
               return;
+            }).catch(reject);
+            return;
+          }
+
+          const fileStream = fs.createWriteStream(opts.audioPath);
+          const { pipeline } = require('stream') as typeof import('stream');
+          let audioBytes = 0;
+
+          res.on('data', (chunk: Buffer) => {
+            audioBytes += chunk.length;
+          });
+
+          pipeline(res, fileStream, (err: Error | null) => {
+            if (err) {
+              try { fs.unlink(opts.audioPath, () => {}); } catch {}
+              reject(err);
+              return;
             }
-            const audio = Buffer.concat(chunks);
-            if (!audio.length) {
+            if (!audioBytes) {
+              try { fs.unlink(opts.audioPath, () => {}); } catch {}
               reject(new Error('ElevenLabs TTS returned empty audio.'));
               return;
             }
-            fs.writeFile(opts.audioPath, audio, (err: Error | null) => {
-              if (err) reject(err);
-              else resolve();
-            });
+            resolve();
           });
         }
       );
@@ -15250,6 +15326,15 @@ app.whenReady().then(async () => {
   // ─── IPC: Extension APIs (for @raycast/api compatibility) ────────
 
   // HTTP request proxy (so extensions can make Node.js HTTP requests without CORS)
+  const activeHttpRequests = new Map<string, () => void>();
+
+  ipcMain.on('http-request-cancel', (_event: any, requestId: string) => {
+    if (!requestId) return;
+    const cancel = activeHttpRequests.get(requestId);
+    if (!cancel) return;
+    cancel();
+  });
+
   ipcMain.handle(
     'http-request',
     async (
@@ -15259,6 +15344,7 @@ app.whenReady().then(async () => {
         method?: string;
         headers?: Record<string, string>;
         body?: string;
+        requestId?: string;
       }
     ) => {
       const http = require('http');
@@ -15276,17 +15362,39 @@ app.whenReady().then(async () => {
         }
       } catch {}
 
+      const requestId = typeof options.requestId === 'string' ? options.requestId : '';
+      let canceled = false;
+      const resolveCanceled = (url: string) => ({
+        status: 0,
+        statusText: 'Request canceled',
+        headers: {},
+        bodyText: '',
+        url,
+      });
+
       const doRequest = (url: string, method: string, headers: Record<string, string>, body: string | undefined, redirectsLeft: number): Promise<any> => {
         return new Promise((resolve) => {
+          let settled = false;
+          const settle = (value: any) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+          };
+          const settleCanceled = () => settle(resolveCanceled(url));
+
+          if (canceled) {
+            settleCanceled();
+            return;
+          }
+
           try {
             const parsedUrl = new URL(url);
             const transport = parsedUrl.protocol === 'https:' ? https : http;
-
             const reqOptions: any = {
               hostname: parsedUrl.hostname,
               port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
               path: parsedUrl.pathname + parsedUrl.search,
-              method: method,
+              method,
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 ...headers,
@@ -15294,87 +15402,113 @@ app.whenReady().then(async () => {
             };
 
             const req = transport.request(reqOptions, (res: any) => {
-              // Follow redirects (301, 302, 303, 307, 308)
+              if (canceled) {
+                res.resume();
+                settleCanceled();
+                return;
+              }
+
               if (redirectsLeft > 0 && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                res.resume(); // drain the response
+                res.resume();
                 const redirectUrl = new URL(res.headers.location, url).toString();
-                const redirectMethod = (res.statusCode === 303) ? 'GET' : method;
-                const redirectBody = (res.statusCode === 303) ? undefined : body;
-                resolve(doRequest(redirectUrl, redirectMethod, headers, redirectBody, redirectsLeft - 1));
+                const redirectMethod = res.statusCode === 303 ? 'GET' : method;
+                const redirectBody = res.statusCode === 303 ? undefined : body;
+                settle(doRequest(redirectUrl, redirectMethod, headers, redirectBody, redirectsLeft - 1));
                 return;
               }
 
               const chunks: Buffer[] = [];
-              res.on('data', (chunk: Buffer) => chunks.push(chunk));
-              res.on('end', () => {
+              res.on('data', (chunk: Buffer) => {
+                if (!canceled) chunks.push(chunk);
+              });
+              res.on('end', async () => {
+                if (canceled) {
+                  settleCanceled();
+                  return;
+                }
+
                 const bodyBuffer = Buffer.concat(chunks);
                 const contentEncoding = String(res.headers['content-encoding'] || '').toLowerCase();
-                let decodedBuffer = bodyBuffer;
-                try {
-                  const zlib = require('zlib');
-                  if (contentEncoding.includes('br')) {
-                    decodedBuffer = zlib.brotliDecompressSync(bodyBuffer);
-                  } else if (contentEncoding.includes('gzip')) {
-                    decodedBuffer = zlib.gunzipSync(bodyBuffer);
-                  } else if (contentEncoding.includes('deflate')) {
-                    decodedBuffer = zlib.inflateSync(bodyBuffer);
-                  }
-                } catch {
-                  // If decompression fails, keep raw buffer to avoid hard-failing requests.
-                  decodedBuffer = bodyBuffer;
+                const decodedBuffer = await decodeHttpResponseBodyBuffer(bodyBuffer, contentEncoding);
+                if (canceled) {
+                  settleCanceled();
+                  return;
                 }
                 const responseHeaders: Record<string, string> = {};
                 for (const [key, val] of Object.entries(res.headers)) {
                   responseHeaders[key] = Array.isArray(val) ? val.join(', ') : String(val);
                 }
-                resolve({
+                settle({
                   status: res.statusCode,
                   statusText: res.statusMessage || '',
                   headers: responseHeaders,
                   bodyText: decodedBuffer.toString('utf-8'),
-                  url: url,
+                  url,
                 });
               });
             });
 
             req.on('error', (err: Error) => {
-              resolve({
+              if (canceled) {
+                settleCanceled();
+                return;
+              }
+
+              settle({
                 status: 0,
                 statusText: err.message,
                 headers: {},
                 bodyText: '',
-                url: url,
+                url,
               });
             });
 
             req.setTimeout(30000, () => {
+              if (settled) return;
               req.destroy();
-              resolve({
+              settle({
                 status: 0,
                 statusText: 'Request timed out',
                 headers: {},
                 bodyText: '',
-                url: url,
+                url,
               });
             });
+
+            if (requestId) {
+              activeHttpRequests.set(requestId, () => {
+                canceled = true;
+                if (settled) return;
+                try {
+                  req.destroy(new Error('Request canceled'));
+                } catch {
+                  req.destroy();
+                }
+                settleCanceled();
+              });
+            }
 
             if (body) {
               req.write(body);
             }
             req.end();
           } catch (e: any) {
-            resolve({
+            settle({
               status: 0,
               statusText: e?.message || 'Request failed',
               headers: {},
               bodyText: '',
-              url: url,
+              url,
             });
           }
         });
       };
 
-      return doRequest(requestUrl, (options.method || 'GET').toUpperCase(), options.headers || {}, options.body, 5);
+      try {
+        return await doRequest(requestUrl, (options.method || 'GET').toUpperCase(), options.headers || {}, options.body, 5);
+      } finally {
+        if (requestId) activeHttpRequests.delete(requestId);
+      }
     }
   );
 
@@ -15395,7 +15529,58 @@ app.whenReady().then(async () => {
   // This is the generic fix for any extension that uses child_process.spawn with progressive output
   // (e.g. speedtest CLI outputting JSON lines, ffmpeg progress, etc.)
   {
-    const spawnedProcesses = new Map<number, any>();
+    const spawnedProcesses = new Map<number, { proc: any; sender: any }>();
+    const spawnedProcessPidsBySender = new WeakMap<any, Set<number>>();
+    const senderCleanupRegistered = new WeakSet<any>();
+
+    const forgetSpawnedProcess = (pid: number) => {
+      const entry = spawnedProcesses.get(pid);
+      if (!entry) return;
+      spawnedProcesses.delete(pid);
+      const senderPids = spawnedProcessPidsBySender.get(entry.sender);
+      senderPids?.delete(pid);
+    };
+
+    const terminateSpawnedProcess = (pid: number, signal?: string | number) => {
+      const entry = spawnedProcesses.get(pid);
+      if (!entry) return;
+      const proc = entry.proc;
+      const killSignal = signal ?? 'SIGTERM';
+      forgetSpawnedProcess(pid);
+      try {
+        if (process.platform !== 'win32' && typeof proc.pid === 'number' && proc.pid > 0) {
+          process.kill(-proc.pid, killSignal as NodeJS.Signals | number);
+        } else {
+          proc.kill(killSignal);
+        }
+      } catch {
+        try { proc.kill(killSignal); } catch {}
+      }
+    };
+
+    const cleanupSenderSpawnedProcesses = (sender: any) => {
+      const senderPids = spawnedProcessPidsBySender.get(sender);
+      if (!senderPids) return;
+      for (const pid of Array.from(senderPids)) {
+        terminateSpawnedProcess(pid, 'SIGTERM');
+      }
+      spawnedProcessPidsBySender.delete(sender);
+    };
+
+    const trackSenderSpawnedProcess = (sender: any, pid: number) => {
+      if (pid === -1 || !sender) return;
+      let senderPids = spawnedProcessPidsBySender.get(sender);
+      if (!senderPids) {
+        senderPids = new Set<number>();
+        spawnedProcessPidsBySender.set(sender, senderPids);
+      }
+      senderPids.add(pid);
+      if (!senderCleanupRegistered.has(sender)) {
+        senderCleanupRegistered.add(sender);
+        try { sender.once?.('destroyed', () => cleanupSenderSpawnedProcesses(sender)); } catch {}
+        try { sender.on?.('render-process-gone', () => cleanupSenderSpawnedProcesses(sender)); } catch {}
+      }
+    };
 
     ipcMain.handle(
       'spawn-process',
@@ -15434,9 +15619,11 @@ app.whenReady().then(async () => {
           : spawn(resolvedFile, args || [], spawnOpts);
 
         const pid: number = proc.pid ?? -1;
-        if (pid !== -1) spawnedProcesses.set(pid, proc);
-
         const sender = event.sender;
+        if (pid !== -1) {
+          spawnedProcesses.set(pid, { proc, sender });
+          trackSenderSpawnedProcess(sender, pid);
+        }
         const safeSend = (channel: string, ...sendArgs: any[]) => {
           try { if (!sender.isDestroyed()) sender.send(channel, ...sendArgs); } catch {}
         };
@@ -15468,7 +15655,7 @@ app.whenReady().then(async () => {
         });
         proc.on('close', (code: number | null) => {
           if (!finalize()) return;
-          spawnedProcesses.delete(pid);
+          forgetSpawnedProcess(pid);
           const exitCode = code ?? 0;
           const seq = nextSeq();
           safeSendSpawnEvent({ pid, seq, type: 'exit', code: exitCode });
@@ -15477,7 +15664,7 @@ app.whenReady().then(async () => {
         });
         proc.on('error', (err: Error) => {
           if (!finalize()) return;
-          spawnedProcesses.delete(pid);
+          forgetSpawnedProcess(pid);
           const message = err.message;
           const seq = nextSeq();
           safeSendSpawnEvent({ pid, seq, type: 'error', message });
@@ -15490,7 +15677,7 @@ app.whenReady().then(async () => {
     );
 
     ipcMain.on('spawn-stdin', (_event: any, pid: number, data: Uint8Array | string, end?: boolean) => {
-      const proc = spawnedProcesses.get(pid);
+      const proc = spawnedProcesses.get(pid)?.proc;
       if (!proc?.stdin) return;
       try {
         if (data != null && (typeof data === 'string' ? data.length > 0 : data.byteLength > 0)) {
@@ -15501,20 +15688,7 @@ app.whenReady().then(async () => {
     });
 
     ipcMain.handle('spawn-kill', (_event: any, pid: number, signal?: string | number) => {
-      const proc = spawnedProcesses.get(pid);
-      if (proc) {
-        const killSignal = signal ?? 'SIGTERM';
-        try {
-          if (process.platform !== 'win32' && typeof proc.pid === 'number' && proc.pid > 0) {
-            process.kill(-proc.pid, killSignal as NodeJS.Signals | number);
-          } else {
-            proc.kill(killSignal);
-          }
-        } catch {
-          try { proc.kill(killSignal); } catch {}
-        }
-        spawnedProcesses.delete(pid);
-      }
+      terminateSpawnedProcess(pid, signal);
     });
   }
 
@@ -15589,17 +15763,60 @@ app.whenReady().then(async () => {
   // Download a URL to a binary buffer via Node.js (bypasses CORS — renderer fetch cannot
   // download from CDNs that don't send CORS headers, but Node.js has no such restriction).
   // Returns a Uint8Array which IPC transmits via structured clone without encoding overhead.
-  ipcMain.handle('http-download-binary', async (_event: any, url: string) => {
+  ipcMain.handle('http-download-binary', async (_event: any, url: string, requestId?: string) => {
     const https = require('https');
     const http = require('http');
     const { execFile } = require('child_process');
     const REQUEST_TIMEOUT_MS = 30_000;
+    const binaryRequestId = typeof requestId === 'string' ? requestId : '';
+    let canceled = false;
+    let activeCancel: (() => void) | undefined;
+    const cancelError = () => {
+      const err = new Error('Request canceled');
+      err.name = 'AbortError';
+      return err;
+    };
+    const throwIfCanceled = () => {
+      if (canceled) throw cancelError();
+    };
+    const setActiveCancel = (cancel: () => void) => {
+      activeCancel = cancel;
+      if (!binaryRequestId) return;
+      activeHttpRequests.set(binaryRequestId, () => {
+        canceled = true;
+        try {
+          activeCancel?.();
+        } catch {}
+      });
+    };
+
+    if (binaryRequestId) {
+      setActiveCancel(() => {});
+    }
 
     const downloadUrl = async (targetUrl: string, redirectCount = 0): Promise<Uint8Array> => {
       if (redirectCount > 10) throw new Error('Too many redirects');
+      throwIfCanceled();
       const parsed = new URL(targetUrl);
 
       return new Promise((resolve, reject) => {
+        let settled = false;
+        let chunks: Buffer[] = [];
+        const cleanupChunks = () => {
+          chunks = [];
+        };
+        const settleResolve = (value: Uint8Array) => {
+          if (settled) return;
+          settled = true;
+          cleanupChunks();
+          resolve(value);
+        };
+        const settleReject = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanupChunks();
+          reject(err);
+        };
         const client = parsed.protocol === 'https:' ? https : http;
         const req = client.get(
           parsed.toString(),
@@ -15610,28 +15827,53 @@ app.whenReady().then(async () => {
             },
           },
           (res: any) => {
+            if (canceled) {
+              res.resume();
+              settleReject(cancelError());
+              return;
+            }
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
               res.resume();
               const redirectUrl = new URL(res.headers.location, parsed).toString();
-              downloadUrl(redirectUrl, redirectCount + 1).then(resolve, reject);
+              downloadUrl(redirectUrl, redirectCount + 1).then(settleResolve, settleReject);
               return;
             }
             if (res.statusCode !== 200) {
               res.resume();
-              reject(new Error(`HTTP ${res.statusCode}`));
+              settleReject(new Error(`HTTP ${res.statusCode}`));
               return;
             }
-            const chunks: Buffer[] = [];
-            res.on('data', (chunk: Buffer) => chunks.push(chunk));
-            res.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
-            res.on('error', reject);
+            res.on('data', (chunk: Buffer) => {
+              if (!canceled) chunks.push(chunk);
+            });
+            res.on('end', () => {
+              if (canceled) {
+                settleReject(cancelError());
+                return;
+              }
+              settleResolve(new Uint8Array(Buffer.concat(chunks)));
+            });
+            res.on('error', (err: Error) => {
+              settleReject(canceled ? cancelError() : err);
+            });
           }
         );
 
+        setActiveCancel(() => {
+          if (settled) return;
+          try {
+            req.destroy(cancelError());
+          } catch {
+            req.destroy();
+          }
+          settleReject(cancelError());
+        });
         req.setTimeout(REQUEST_TIMEOUT_MS, () => {
           req.destroy(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS}ms`));
         });
-        req.on('error', reject);
+        req.on('error', (err: Error) => {
+          settleReject(canceled ? cancelError() : err);
+        });
       });
     };
 
@@ -15639,8 +15881,20 @@ app.whenReady().then(async () => {
       try {
         return await downloadUrl(url);
       } catch (primaryErr: any) {
+        throwIfCanceled();
         const curlOutput = await new Promise<Uint8Array>((resolve, reject) => {
-          execFile(
+          let settled = false;
+          const settleResolve = (value: Uint8Array) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+          };
+          const settleReject = (err: Error) => {
+            if (settled) return;
+            settled = true;
+            reject(err);
+          };
+          const child = execFile(
             '/usr/bin/curl',
             [
               '-fsSL',
@@ -15652,24 +15906,41 @@ app.whenReady().then(async () => {
             ],
             { encoding: null, maxBuffer: 100 * 1024 * 1024 },
             (err: Error | null, stdout: Buffer, stderr: Buffer | string) => {
+              if (canceled) {
+                settleReject(cancelError());
+                return;
+              }
               if (err) {
-                const stderrText = typeof stderr === 'string' ? stderr : String(stderr || '');
-                reject(
+                const stderrText = typeof stderr === 'string'
+                  ? stderr.slice(0, 4096)
+                  : Buffer.isBuffer(stderr)
+                    ? stderr.toString('utf-8', 0, Math.min(stderr.length, 4096))
+                    : String(stderr || '').slice(0, 4096);
+                settleReject(
                   new Error(
                     `HTTP download failed (${primaryErr?.message || 'unknown'}) and curl fallback failed (${stderrText || err.message})`
                   )
                 );
                 return;
               }
-              resolve(new Uint8Array(stdout));
+              settleResolve(new Uint8Array(stdout));
             }
           );
+          setActiveCancel(() => {
+            if (settled) return;
+            try { child.kill('SIGTERM'); } catch {}
+            settleReject(cancelError());
+          });
         });
         return curlOutput;
       }
     };
 
-    return downloadWithCurlFallback();
+    try {
+      return await downloadWithCurlFallback();
+    } finally {
+      if (binaryRequestId) activeHttpRequests.delete(binaryRequestId);
+    }
   });
 
   // Write raw binary data to a real file path (extensions use this for CLI tool downloads)
@@ -16348,12 +16619,10 @@ return appURL's |path|() as text`,
       if (!success) {
         throw new Error(`Failed to install extension "${name}". Check SuperCmd main-process logs for details.`);
       }
-      // Invalidate the command cache and rebuild it BEFORE we broadcast, so
+      // Refresh extension commands BEFORE we broadcast, so
       // the renderer's follow-up get-commands fetch lands on fresh data
-      // rather than the stale fallback that getAvailableCommands() returns
-      // immediately after an invalidation.
-      invalidateCache();
-      try { await refreshCommandsNow(); } catch (e) { console.warn('refreshCommandsNow after install failed:', e); }
+      // without rediscovering unrelated apps/settings when a cache exists.
+      try { await refreshCommandsForExtensionChange(); } catch (e) { console.warn('refreshCommandsForExtensionChange after install failed:', e); }
       broadcastExtensionsUpdated();
       // The launcher's root list listens for 'commands-updated', not
       // 'extensions-updated' — without this, the new extension wouldn't
@@ -16371,10 +16640,9 @@ return appURL's |path|() as text`,
     async (_event: any, name: string) => {
       const success = await uninstallExtension(name);
       if (success) {
-        // Invalidate the command cache and rebuild synchronously before
+        // Refresh extension commands synchronously before
         // broadcasting — see install-extension handler for context.
-        invalidateCache();
-        try { await refreshCommandsNow(); } catch (e) { console.warn('refreshCommandsNow after uninstall failed:', e); }
+        try { await refreshCommandsForExtensionChange(); } catch (e) { console.warn('refreshCommandsForExtensionChange after uninstall failed:', e); }
         // Tell the launcher renderer to tear down any live runners (menu-bar
         // tray, background no-view loop, interval re-runner) for this
         // extension before its bundle keeps trying to re-mount itself.
@@ -18210,7 +18478,7 @@ if let tiff = image?.tiffRepresentation {
                 requestId,
                 error: `HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`,
               });
-              activeAIRequests.delete(requestId);
+              finishPullRequest();
             });
             return;
           }
@@ -18254,7 +18522,7 @@ if let tiff = image?.tiffRepresentation {
             if (!controller.signal.aborted) {
               event.sender.send('ollama-pull-done', { requestId });
             }
-            activeAIRequests.delete(requestId);
+            finishPullRequest();
           });
         }
       );
@@ -18266,16 +18534,34 @@ if let tiff = image?.tiffRepresentation {
             error: err.message || 'Failed to pull model',
           });
         }
-        activeAIRequests.delete(requestId);
+        finishPullRequest();
       });
 
+      let abortListenerAttached = false;
+      let pullRequestFinished = false;
+      const onAbort = () => {
+        finishPullRequest();
+        req.destroy();
+      };
+      const cleanupAbortListener = () => {
+        if (!abortListenerAttached) return;
+        controller.signal.removeEventListener('abort', onAbort);
+        abortListenerAttached = false;
+      };
+      const finishPullRequest = () => {
+        if (pullRequestFinished) return;
+        pullRequestFinished = true;
+        cleanupAbortListener();
+        activeAIRequests.delete(requestId);
+      };
+
       if (controller.signal.aborted) {
+        finishPullRequest();
         req.destroy();
         return;
       }
-      controller.signal.addEventListener('abort', () => {
-        req.destroy();
-      }, { once: true });
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+      abortListenerAttached = true;
 
       req.write(body);
       req.end();
@@ -18712,7 +18998,9 @@ if let tiff = image?.tiffRepresentation {
       let stderrBuffer = '';
 
       child.stdout?.on('data', (chunk: Buffer) => {
-        stdoutBuffer += chunk.toString('utf8');
+        const result = appendNativeHelperTextBuffer(stdoutBuffer, chunk);
+        stdoutBuffer = result.buffer;
+        if (result.truncated) warnNativeHelperLineBufferTruncated('KeyboardLock stdout');
         if (!settled && stdoutBuffer.includes('ready')) {
           settled = true;
           resolve({ ok: true });
@@ -18720,7 +19008,9 @@ if let tiff = image?.tiffRepresentation {
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
-        stderrBuffer += chunk.toString('utf8');
+        const result = appendNativeHelperTextBuffer(stderrBuffer, chunk);
+        stderrBuffer = result.buffer;
+        if (result.truncated) warnNativeHelperLineBufferTruncated('KeyboardLock stderr');
       });
 
       child.on('exit', (code: number | null) => {

@@ -14,6 +14,7 @@
  */
 
 import { app } from 'electron';
+import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -119,6 +120,42 @@ interface FsPathSignature {
   mtimeMs: number;
 }
 
+interface BuildFileSignature extends FsPathSignature {
+  path: string;
+  hash: string;
+}
+
+interface ExtensionCommandBuildStamp {
+  name: string;
+  commandSignature: string;
+  entryFile: string;
+  outFile: string;
+  outputSignature: BuildFileSignature;
+  inputSignatures: BuildFileSignature[];
+}
+
+interface ExtensionBuildStamp {
+  version: number;
+  extName: string;
+  platform: string;
+  arch: string;
+  esbuildVersion: string;
+  external: string[];
+  tsconfigRaw: string;
+  runtimeDeps: string[];
+  configSignatures: BuildFileSignature[];
+  commands: ExtensionCommandBuildStamp[];
+}
+
+interface ExtensionBuildInput {
+  requiresNodeModules: boolean;
+  tsconfigRaw: string;
+  buildContext: Omit<ExtensionBuildStamp, 'commands'>;
+}
+
+const extensionBuildStampVersion = 1;
+const extensionBuildStampFile = '.sc-build-stamp.json';
+
 interface InstalledExtensionSourceSignature {
   extName: string;
   extPath: string;
@@ -202,6 +239,62 @@ function getPathSignature(filePath: string): FsPathSignature {
   }
 }
 
+function getStoredBuildPath(extPath: string, filePath: string): string {
+  const normalized = path.resolve(filePath);
+  const relative = path.relative(extPath, normalized);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return `rel:${relative.split(path.sep).join('/')}`;
+  }
+  return `abs:${normalized}`;
+}
+
+function resolveStoredBuildPath(extPath: string, storedPath: string): string {
+  if (storedPath.startsWith('rel:')) {
+    return path.join(extPath, ...storedPath.slice(4).split('/'));
+  }
+  if (storedPath.startsWith('abs:')) {
+    return storedPath.slice(4);
+  }
+  return storedPath;
+}
+
+function hashFile(filePath: string): string {
+  try {
+    return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  } catch {
+    return '';
+  }
+}
+
+function getBuildFileSignature(extPath: string, filePath: string): BuildFileSignature {
+  const signature = getPathSignature(filePath);
+  return {
+    path: getStoredBuildPath(extPath, filePath),
+    ...signature,
+    hash: signature.exists && signature.isFile ? hashFile(filePath) : '',
+  };
+}
+
+function sameBuildFileSignature(a: BuildFileSignature, b: BuildFileSignature): boolean {
+  return (
+    a.path === b.path &&
+    a.exists === b.exists &&
+    a.isFile === b.isFile &&
+    a.isDirectory === b.isDirectory &&
+    a.size === b.size &&
+    a.mtimeMs === b.mtimeMs &&
+    a.hash === b.hash
+  );
+}
+
+function sameBuildFileSignatures(a: BuildFileSignature[], b: BuildFileSignature[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!sameBuildFileSignature(a[i], b[i])) return false;
+  }
+  return true;
+}
+
 function samePathSignature(a: FsPathSignature, b: FsPathSignature): boolean {
   return (
     a.exists === b.exists &&
@@ -224,6 +317,25 @@ function sameRootSnapshot(
     if (!samePathSignature(rootSignatures[i], snapshot.rootSignatures[i])) return false;
   }
   return true;
+}
+
+function readExtensionBuildStamp(buildDir: string): ExtensionBuildStamp | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(buildDir, extensionBuildStampFile), 'utf-8'));
+    if (parsed?.version !== extensionBuildStampVersion || !Array.isArray(parsed?.commands)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeExtensionBuildStamp(buildDir: string, stamp: ExtensionBuildStamp): void {
+  try {
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, extensionBuildStampFile), JSON.stringify(stamp, null, 2));
+  } catch (error: any) {
+    console.warn('Failed to write extension build stamp:', error?.message || error);
+  }
 }
 
 function getInstalledExtensionSourceSignature(source: InstalledExtensionSource): InstalledExtensionSourceSignature {
@@ -660,6 +772,43 @@ function extensionRequiresNodeModules(pkg: any): boolean {
   return getInstallableRuntimeDeps(pkg).length > 0;
 }
 
+function createNativeSchemeExternalPlugin(): any {
+  return {
+    name: 'native-scheme-external',
+    setup(build: any) {
+      build.onResolve({ filter: /^(swift|rust):/ }, (args: any) => ({
+        path: args.path,
+        external: true,
+      }));
+    },
+  };
+}
+
+function getExtensionBuildExternals(manifestExternal: string[]): string[] {
+  return [
+    'react',
+    'react-dom',
+    'react-dom/*',
+    'react/jsx-runtime',
+    'react/jsx-dev-runtime',
+    '@raycast/api',
+    '@raycast/utils',
+    're2',
+    'better-sqlite3',
+    'fsevents',
+    'raycast-cross-extension',
+    'node-fetch',
+    'undici',
+    'undici/*',
+    'axios',
+    'tar',
+    'extract-zip',
+    'sha256-file',
+    ...manifestExternal,
+    ...nodeBuiltins,
+  ];
+}
+
 /**
  * Parse a tsconfig.json that may contain JSONC features (comments, trailing commas).
  * TypeScript itself accepts these, and many Raycast extensions ship them
@@ -833,6 +982,218 @@ function resolveEntryFile(extPath: string, cmd: any): string | null {
   return null;
 }
 
+function getEsbuildPackageVersion(): string {
+  try {
+    const pkgPath = require.resolve('esbuild/package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    return typeof pkg?.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function getExtensionConfigSignatures(extPath: string): BuildFileSignature[] {
+  return [
+    'package.json',
+    'tsconfig.json',
+    'package-lock.json',
+    'npm-shrinkwrap.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+    'bun.lock',
+    'bun.lockb',
+  ]
+    .map((fileName) => path.join(extPath, fileName))
+    .filter((filePath) => fs.existsSync(filePath))
+    .map((filePath) => getBuildFileSignature(extPath, filePath));
+}
+
+function createExtensionBuildContext(
+  extName: string,
+  extPath: string,
+  pkg: any,
+  manifestExternal: string[],
+  tsconfigRaw: string
+): Omit<ExtensionBuildStamp, 'commands'> {
+  return {
+    version: extensionBuildStampVersion,
+    extName,
+    platform: process.platform,
+    arch: process.arch,
+    esbuildVersion: getEsbuildPackageVersion(),
+    external: getExtensionBuildExternals(manifestExternal),
+    tsconfigRaw,
+    runtimeDeps: getInstallableRuntimeDeps(pkg),
+    configSignatures: getExtensionConfigSignatures(extPath),
+  };
+}
+
+function getManifestExternal(pkg: any): string[] {
+  return Array.isArray(pkg?.external)
+    ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
+    : [];
+}
+
+function createExtensionBuildInput(
+  extName: string,
+  extPath: string,
+  pkg: any
+): ExtensionBuildInput {
+  const manifestExternal = getManifestExternal(pkg);
+  const tsconfigRaw = getEsbuildTsconfigRaw(extPath);
+  return {
+    requiresNodeModules: extensionRequiresNodeModules(pkg),
+    tsconfigRaw,
+    buildContext: createExtensionBuildContext(extName, extPath, pkg, manifestExternal, tsconfigRaw),
+  };
+}
+
+function createCommonExtensionBuildOptions(
+  extPath: string,
+  extNodeModules: string,
+  buildInput: ExtensionBuildInput
+): Record<string, any> {
+  return {
+    absWorkingDir: extPath,
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    plugins: [createNativeSchemeExternalPlugin()],
+    external: buildInput.buildContext.external,
+    nodePaths: fs.existsSync(extNodeModules) ? [extNodeModules] : [],
+    target: 'es2020',
+    jsx: 'automatic',
+    jsxImportSource: 'react',
+    tsconfigRaw: buildInput.tsconfigRaw,
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      'global': 'globalThis',
+    },
+    logLevel: 'warning',
+    metafile: true,
+  };
+}
+
+function sameExtensionBuildContext(
+  stamp: ExtensionBuildStamp | null,
+  context: Omit<ExtensionBuildStamp, 'commands'>
+): stamp is ExtensionBuildStamp {
+  if (!stamp) return false;
+  return (
+    stamp.version === context.version &&
+    stamp.extName === context.extName &&
+    stamp.platform === context.platform &&
+    stamp.arch === context.arch &&
+    stamp.esbuildVersion === context.esbuildVersion &&
+    JSON.stringify(stamp.external) === JSON.stringify(context.external) &&
+    stamp.tsconfigRaw === context.tsconfigRaw &&
+    JSON.stringify(stamp.runtimeDeps) === JSON.stringify(context.runtimeDeps) &&
+    sameBuildFileSignatures(stamp.configSignatures, context.configSignatures)
+  );
+}
+
+function commandBuildSignature(cmd: any): string {
+  return JSON.stringify(cmd || {});
+}
+
+function findCommandStamp(
+  stamp: ExtensionBuildStamp,
+  cmdName: string
+): ExtensionCommandBuildStamp | null {
+  return stamp.commands.find((command) => command.name === cmdName) || null;
+}
+
+function isCommandBuildUpToDate(
+  extPath: string,
+  commandStamp: ExtensionCommandBuildStamp | null,
+  cmd: any,
+  entryFile: string,
+  outFile: string
+): commandStamp is ExtensionCommandBuildStamp {
+  if (!commandStamp) return false;
+  if (commandStamp.commandSignature !== commandBuildSignature(cmd)) return false;
+  if (commandStamp.entryFile !== getStoredBuildPath(extPath, entryFile)) return false;
+  if (commandStamp.outFile !== getStoredBuildPath(extPath, outFile)) return false;
+  if (!fs.existsSync(outFile)) return false;
+
+  const outputSignature = getBuildFileSignature(extPath, outFile);
+  if (!sameBuildFileSignature(commandStamp.outputSignature, outputSignature)) return false;
+
+  const currentInputSignatures = commandStamp.inputSignatures.map((input) =>
+    getBuildFileSignature(extPath, resolveStoredBuildPath(extPath, input.path))
+  );
+  return sameBuildFileSignatures(commandStamp.inputSignatures, currentInputSignatures);
+}
+
+function getMetafileInputsForOutput(
+  extPath: string,
+  metafile: any,
+  outFile: string
+): string[] {
+  const outputs = metafile?.outputs && typeof metafile.outputs === 'object'
+    ? metafile.outputs
+    : {};
+  const normalizedOutFile = path.resolve(outFile);
+
+  for (const [outputPath, outputMeta] of Object.entries(outputs)) {
+    const resolvedOutput = path.isAbsolute(outputPath)
+      ? path.resolve(outputPath)
+      : path.resolve(extPath, outputPath);
+    if (resolvedOutput !== normalizedOutFile) continue;
+    const inputs = (outputMeta as any)?.inputs;
+    if (!inputs || typeof inputs !== 'object') return [];
+    return Object.keys(inputs).map((inputPath) =>
+      path.isAbsolute(inputPath) ? inputPath : path.resolve(extPath, inputPath)
+    );
+  }
+
+  return [];
+}
+
+function createCommandBuildStamp(
+  extPath: string,
+  cmd: any,
+  entryFile: string,
+  outFile: string,
+  metafile: any
+): ExtensionCommandBuildStamp {
+  const inputFiles = new Set<string>([
+    entryFile,
+    ...getMetafileInputsForOutput(extPath, metafile, outFile),
+  ]);
+  return {
+    name: String(cmd.name),
+    commandSignature: commandBuildSignature(cmd),
+    entryFile: getStoredBuildPath(extPath, entryFile),
+    outFile: getStoredBuildPath(extPath, outFile),
+    outputSignature: getBuildFileSignature(extPath, outFile),
+    inputSignatures: [...inputFiles]
+      .map((filePath) => getBuildFileSignature(extPath, filePath))
+      .sort((a, b) => a.path.localeCompare(b.path)),
+  };
+}
+
+function writeMergedCommandBuildStamp(
+  buildDir: string,
+  buildContext: Omit<ExtensionBuildStamp, 'commands'>,
+  commandStamp: ExtensionCommandBuildStamp
+): void {
+  const previousStamp = readExtensionBuildStamp(buildDir);
+  const nextCommandStamps = new Map<string, ExtensionCommandBuildStamp>();
+
+  if (sameExtensionBuildContext(previousStamp, buildContext)) {
+    for (const existingStamp of previousStamp.commands) {
+      nextCommandStamps.set(existingStamp.name, existingStamp);
+    }
+  }
+
+  nextCommandStamps.set(commandStamp.name, commandStamp);
+  writeExtensionBuildStamp(buildDir, {
+    ...buildContext,
+    commands: [...nextCommandStamps.values()].sort((a, b) => a.name.localeCompare(b.name)),
+  });
+}
+
 /**
  * Build ALL commands for an installed extension using esbuild.
  * Called at install time so the extension is ready to run instantly.
@@ -858,8 +1219,7 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
   invalidateExtensionStaticCacheForPath(extPath);
 
   let commands: any[];
-  let requiresNodeModules = false;
-  let manifestExternal: string[] = [];
+  let buildInput: ExtensionBuildInput;
   try {
     const pkg = readExtensionManifest(extPath);
     if (!pkg) return 0;
@@ -868,130 +1228,158 @@ export async function buildAllCommands(extName: string, extPathOverride?: string
       return 0;
     }
     commands = pkg.commands || [];
-    requiresNodeModules = extensionRequiresNodeModules(pkg);
-    manifestExternal = Array.isArray(pkg.external)
-      ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
-      : [];
+    buildInput = createExtensionBuildInput(extName, extPath, pkg);
   } catch {
     return 0;
   }
 
   if (commands.length === 0) return 0;
 
-  const esbuild = requireEsbuild();
-  const extNodeModules = path.join(extPath, 'node_modules');
-  if (requiresNodeModules && !fs.existsSync(extNodeModules)) {
-    try {
-      const { installExtensionDeps } = require('./extension-registry');
-      await installExtensionDeps(extPath);
-    } catch (e: any) {
-      console.error(`Failed to install dependencies for ${extName}:`, e?.message || e);
-      return 0;
-    }
-    if (!fs.existsSync(extNodeModules)) {
-      console.error(`Dependencies missing for ${extName}: ${extNodeModules} not found`);
-      return 0;
-    }
-  }
   const buildDir = getBuildDir(extPath);
-  // Avoid stale command bundles when extension source layout changes.
-  try {
-    fs.rmSync(buildDir, { recursive: true, force: true });
-  } catch {}
-  fs.mkdirSync(buildDir, { recursive: true });
-  let built = 0;
+  const buildContext = buildInput.buildContext;
+  const previousStamp = readExtensionBuildStamp(buildDir);
+  const matchingStamp = sameExtensionBuildContext(previousStamp, buildContext) ? previousStamp : null;
+  const buildableCommands: Array<{ cmd: any; entryFile: string; outFile: string }> = [];
+  const staleCommands: Array<{ cmd: any; entryFile: string; outFile: string }> = [];
+  const nextCommandStamps = new Map<string, ExtensionCommandBuildStamp>();
+  let reusedPrebuilt = 0;
+  let skipped = 0;
 
   for (const cmd of commands) {
     if (!cmd.name) continue;
     if (!isCommandPlatformCompatible(cmd)) continue;
 
+    const outFile = path.join(buildDir, `${cmd.name}.js`);
     const entryFile = resolveEntryFile(extPath, cmd);
     if (!entryFile) {
+      if (fs.existsSync(outFile)) {
+        reusedPrebuilt++;
+        continue;
+      }
       console.warn(`No entry file for ${extName}/${cmd.name}, skipping`);
       continue;
     }
 
-    const outFile = path.join(buildDir, `${cmd.name}.js`);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    const buildableCommand = { cmd, entryFile, outFile };
+    buildableCommands.push(buildableCommand);
 
+    const commandStamp = matchingStamp
+      ? findCommandStamp(matchingStamp, String(cmd.name))
+      : null;
+    if (isCommandBuildUpToDate(extPath, commandStamp, cmd, entryFile, outFile)) {
+      nextCommandStamps.set(String(cmd.name), commandStamp);
+      skipped++;
+    } else {
+      staleCommands.push(buildableCommand);
+    }
+  }
+
+  if (buildableCommands.length === 0) {
+    if (reusedPrebuilt > 0) {
+      console.log(`Reused ${reusedPrebuilt}/${commands.length} pre-built commands for ${extName}`);
+      return reusedPrebuilt;
+    }
+    console.log(`Built 0/${commands.length} commands for ${extName}`);
+    return 0;
+  }
+
+  if (staleCommands.length === 0) {
+    const ready = skipped + reusedPrebuilt;
+    console.log(`Reused ${ready}/${commands.length} commands for ${extName}`);
+    return ready;
+  }
+
+  const extNodeModules = path.join(extPath, 'node_modules');
+  if (buildInput.requiresNodeModules && !fs.existsSync(extNodeModules)) {
     try {
-      console.log(`  Building ${extName}/${cmd.name}…`);
+      const { installExtensionDeps } = require('./extension-registry');
+      await installExtensionDeps(extPath);
+    } catch (e: any) {
+      console.error(`Failed to install dependencies for ${extName}:`, e?.message || e);
+      return skipped + reusedPrebuilt;
+    }
+    if (!fs.existsSync(extNodeModules)) {
+      console.error(`Dependencies missing for ${extName}: ${extNodeModules} not found`);
+      return skipped + reusedPrebuilt;
+    }
+  }
 
-      await runEsbuildBuild(
-        esbuild,
-        {
-          entryPoints: [entryFile],
-          absWorkingDir: extPath,
-          bundle: true,
-          format: 'cjs',
-          platform: 'node',
-          outfile: outFile,
-          plugins: [
-            // Mark swift:/rust: imports as external so fakeRequire can handle them at runtime
-            {
-              name: 'native-scheme-external',
-              setup(build: any) {
-                build.onResolve({ filter: /^(swift|rust):/ }, (args: any) => ({
-                  path: args.path,
-                  external: true,
-                }));
-              },
-            },
-          ],
-          external: [
-            // React — provided by the renderer at runtime
-            'react',
-            'react-dom',
-            'react-dom/*',
-            'react/jsx-runtime',
-            'react/jsx-dev-runtime',
-            // Raycast — provided by our shim
-            '@raycast/api',
-            '@raycast/utils',
-            // Native C++ addons — cannot be bundled, we stub them at runtime
-            're2',
-            'better-sqlite3',
-            'fsevents',
-            // Cross-extension calls — not supported, stubbed
-            'raycast-cross-extension',
-            // Fetch libs — use runtime shims in renderer instead of bundling Node internals
-            'node-fetch',
-            'undici',
-            'undici/*',
-            // HTTP / file-download / archive packages — must be kept external so our renderer
-            // shim can intercept them and route file I/O through the main process (which has
-            // real filesystem access). Bundling them inline breaks binary downloads because the
-            // browser renderer cannot do streaming file writes or archive extraction natively.
-            'axios',
-            'tar',
-            'extract-zip',
-            'sha256-file',
-            // Respect extension-defined externals from manifest
-            ...manifestExternal,
-            // Node.js built-ins — stubbed at runtime in the renderer
-            ...nodeBuiltins,
-          ],
-          nodePaths: fs.existsSync(extNodeModules) ? [extNodeModules] : [],
-          target: 'es2020',
-          jsx: 'automatic',
-          jsxImportSource: 'react',
-          tsconfigRaw: getEsbuildTsconfigRaw(extPath),
-          define: {
-            'process.env.NODE_ENV': '"production"',
-            'global': 'globalThis',
-          },
-          logLevel: 'warning',
-        },
-        extPath,
-        `${extName}/${cmd.name}`
-      );
+  const esbuild = requireEsbuild();
+  const commonOptions = createCommonExtensionBuildOptions(extPath, extNodeModules, buildInput);
 
+  for (const { outFile } of staleCommands) {
+    try {
+      fs.rmSync(outFile, { force: true });
+    } catch {}
+  }
+
+  let built = skipped + reusedPrebuilt;
+  try {
+    console.log(`  Building ${staleCommands.length}/${buildableCommands.length} stale commands for ${extName}…`);
+    const entryPoints = Object.fromEntries(
+      staleCommands.map(({ cmd, entryFile }) => [String(cmd.name), entryFile])
+    );
+    const result = await runEsbuildBuild(
+      esbuild,
+      {
+        ...commonOptions,
+        entryPoints,
+        outdir: buildDir,
+      },
+      extPath,
+      `${extName}/*`
+    );
+
+    for (const { cmd, entryFile, outFile } of staleCommands) {
       if (fs.existsSync(outFile)) {
+        nextCommandStamps.set(
+          String(cmd.name),
+          createCommandBuildStamp(extPath, cmd, entryFile, outFile, result?.metafile)
+        );
         built++;
       }
-    } catch (e) {
-      console.error(`  esbuild failed for ${extName}/${cmd.name}:`, e);
     }
+  } catch (batchError) {
+    console.warn(
+      `  Batched esbuild failed for ${extName}; falling back to per-command builds:`,
+      (batchError as any)?.message || batchError
+    );
+
+    built = skipped + reusedPrebuilt;
+    for (const { cmd, entryFile, outFile } of staleCommands) {
+      try {
+        console.log(`  Building ${extName}/${cmd.name}…`);
+
+        const result = await runEsbuildBuild(
+          esbuild,
+          {
+            ...commonOptions,
+            entryPoints: [entryFile],
+            outfile: outFile,
+          },
+          extPath,
+          `${extName}/${cmd.name}`
+        );
+
+        if (fs.existsSync(outFile)) {
+          nextCommandStamps.set(
+            String(cmd.name),
+            createCommandBuildStamp(extPath, cmd, entryFile, outFile, result?.metafile)
+          );
+          built++;
+        }
+      } catch (e) {
+        console.error(`  esbuild failed for ${extName}/${cmd.name}:`, e);
+      }
+    }
+  }
+
+  if (nextCommandStamps.size > 0) {
+    writeExtensionBuildStamp(buildDir, {
+      ...buildContext,
+      commands: [...nextCommandStamps.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    });
   }
 
   console.log(`Built ${built}/${commands.length} commands for ${extName}`);
@@ -1155,8 +1543,7 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   invalidateExtensionStaticCacheForPath(extPath);
 
   let cmd: any;
-  let requiresNodeModules = false;
-  let manifestExternal: string[] = [];
+  let buildInput: ExtensionBuildInput;
   try {
     const pkg = readExtensionManifest(extPath);
     if (!pkg) return false;
@@ -1166,10 +1553,7 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
     }
     const commands = pkg.commands || [];
     cmd = commands.find((c: any) => c.name === cmdName);
-    requiresNodeModules = extensionRequiresNodeModules(pkg);
-    manifestExternal = Array.isArray(pkg.external)
-      ? pkg.external.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
-      : [];
+    buildInput = createExtensionBuildInput(extName, extPath, pkg);
   } catch (e: any) {
     console.error(`buildSingleCommand: failed to parse package.json for ${extName}:`, e?.message);
     return false;
@@ -1197,7 +1581,7 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   const extNodeModules = path.join(extPath, 'node_modules');
 
   // If node_modules is missing, install dependencies first
-  if (requiresNodeModules && !fs.existsSync(extNodeModules)) {
+  if (buildInput.requiresNodeModules && !fs.existsSync(extNodeModules)) {
     console.log(`  node_modules missing for ${extName}, installing dependencies…`);
     try {
       const { installExtensionDeps } = require('./extension-registry');
@@ -1212,51 +1596,25 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
   try {
     const esbuild = requireEsbuild();
     console.log(`  On-demand building ${extName}/${cmdName}…`);
-    await runEsbuildBuild(
+    const result = await runEsbuildBuild(
       esbuild,
       {
-        entryPoints: [entryFile],
-        absWorkingDir: extPath,
-        bundle: true,
-        format: 'cjs',
-        platform: 'node',
+        ...createCommonExtensionBuildOptions(extPath, extNodeModules, buildInput),
         outfile: outFile,
-        plugins: [
-          {
-            name: 'native-scheme-external',
-            setup(build: any) {
-              build.onResolve({ filter: /^(swift|rust):/ }, (args: any) => ({
-                path: args.path,
-                external: true,
-              }));
-            },
-          },
-        ],
-        external: [
-          'react', 'react-dom', 'react-dom/*', 'react/jsx-runtime', 'react/jsx-dev-runtime',
-          '@raycast/api', '@raycast/utils',
-          're2', 'better-sqlite3', 'fsevents',
-          'raycast-cross-extension',
-          'node-fetch', 'undici', 'undici/*',
-          'axios', 'tar', 'extract-zip', 'sha256-file',
-          ...manifestExternal,
-          ...nodeBuiltins,
-        ],
-        nodePaths: fs.existsSync(extNodeModules) ? [extNodeModules] : [],
-        target: 'es2020',
-        jsx: 'automatic',
-        jsxImportSource: 'react',
-        tsconfigRaw: getEsbuildTsconfigRaw(extPath),
-        define: {
-          'process.env.NODE_ENV': '"production"',
-          'global': 'globalThis',
-        },
-        logLevel: 'warning',
+        entryPoints: [entryFile],
       },
       extPath,
       `${extName}/${cmdName}`
     );
-    return fs.existsSync(outFile);
+    const built = fs.existsSync(outFile);
+    if (built) {
+      writeMergedCommandBuildStamp(
+        buildDir,
+        buildInput.buildContext,
+        createCommandBuildStamp(extPath, cmd, entryFile, outFile, result?.metafile)
+      );
+    }
+    return built;
   } catch (e: any) {
     console.error(`  On-demand esbuild failed for ${extName}/${cmdName}:`, e);
     lastBuildError.set(`${extName}/${cmdName}`, e?.message || String(e));
@@ -1312,9 +1670,9 @@ async function runEsbuildBuild(
   options: any,
   extPath: string,
   label: string
-): Promise<void> {
+): Promise<any> {
   try {
-    await esbuild.build(options);
+    return await esbuild.build(options);
   } catch (error: any) {
     const missing = extractMissingBareImports(error);
     if (missing.length === 0) throw error;
@@ -1330,7 +1688,7 @@ async function runEsbuildBuild(
       );
       throw error;
     }
-    await esbuild.build(options);
+    return await esbuild.build(options);
   }
 }
 

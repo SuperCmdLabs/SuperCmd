@@ -454,6 +454,7 @@ const electronAPI = {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    requestId?: string;
   }): Promise<{
     status: number;
     statusText: string;
@@ -462,9 +463,13 @@ const electronAPI = {
     url: string;
   }> => ipcRenderer.invoke('http-request', options),
 
+  cancelHttpRequest: (requestId: string): void => {
+    ipcRenderer.send('http-request-cancel', requestId);
+  },
+
   // Download a URL via Node.js (avoids renderer CORS restrictions for binary CDN downloads)
-  httpDownloadBinary: (url: string): Promise<Uint8Array> =>
-    ipcRenderer.invoke('http-download-binary', url),
+  httpDownloadBinary: (url: string, requestId?: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke('http-download-binary', url, requestId),
 
   // Write raw binary data to a file (used by extension download/install flows)
   fsWriteBinaryFile: (filePath: string, data: Uint8Array): Promise<void> =>

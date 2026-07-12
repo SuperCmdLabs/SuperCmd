@@ -17,6 +17,7 @@ import type { CommandInfo } from '../../types/electron';
 import { parseIntervalToMs } from '../utils/command-helpers';
 import {
   clearBackgroundRefreshTimers,
+  createInFlightBackgroundRefreshTick,
   getBackgroundRefreshTimerDescriptors,
   reconcileBackgroundRefreshTimers,
   type BackgroundRefreshTimerEntry,
@@ -57,7 +58,7 @@ export function useBackgroundRefresh({ commands, fetchCommands, isMenuBarCommand
     if (descriptor.kind === 'extension') {
       const { extName, cmdName } = descriptor.extensionCommand!;
 
-      return window.setInterval(async () => {
+      return window.setInterval(createInFlightBackgroundRefreshTick(async () => {
         try {
           const result = await window.electron.runExtension(extName, cmdName);
           if (!result || !result.code) return;
@@ -97,10 +98,10 @@ export function useBackgroundRefresh({ commands, fetchCommands, isMenuBarCommand
         } catch (error) {
           console.error('[BackgroundRefresh] Failed to run command:', cmd.id, error);
         }
-      }, descriptor.intervalMs);
+      }), descriptor.intervalMs);
     }
 
-    return window.setInterval(async () => {
+    return window.setInterval(createInFlightBackgroundRefreshTick(async () => {
       try {
         const storedArgs = readJsonObject(getScriptCmdArgsKey(cmd.id));
         const missingArgs = getMissingRequiredScriptArguments(cmd, storedArgs);
@@ -116,7 +117,7 @@ export function useBackgroundRefresh({ commands, fetchCommands, isMenuBarCommand
       } catch (error) {
         console.error('[BackgroundRefresh] Failed to run script command:', cmd.id, error);
       }
-    }, descriptor.intervalMs);
+    }), descriptor.intervalMs);
   }, []);
 
   useEffect(() => {
