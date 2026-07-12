@@ -3,6 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { importTs } from './lib/ts-import.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const files = {
   history: fs.readFileSync('src/main/browser-search-history.ts', 'utf8'),
@@ -24,9 +29,26 @@ function assertNotIncludes(source, needle) {
 }
 
 test('Browser search lag fix', async (t) => {
-  await t.test('main history module exports required functions', () => {
-    assertIncludes(files.history, 'getBrowserSearchRevision');
-    assertIncludes(files.history, 'getBrowserSearchStats');
+  // Baseline: this used to grep browser-search-history.ts for export names,
+  // which could not prove the module or its relative imports actually execute.
+  await t.test('main history module imports exported browser-search API', async () => {
+    const history = await importTs(path.join(root, 'src/main/browser-search-history.ts'));
+
+    assert.equal(typeof history.getBrowserSearchRevision, 'function');
+    assert.equal(typeof history.getBrowserSearchStats, 'function');
+    assert.equal(typeof history.resolveInput, 'function');
+
+    const url = history.resolveInput('example.com');
+    assert.equal(url?.type, 'url');
+    assert.equal(url?.url, 'https://example.com/');
+    assert.equal(url?.host, 'example.com');
+
+    const search = history.resolveInput('browser search lag');
+    assert.equal(search?.type, 'search');
+    assert.equal(search?.url, 'https://www.google.com/search?q=browser%20search%20lag');
+  });
+
+  await t.test('profile bookmark import keeps dedupe state', () => {
     assertIncludes(files.history, 'seenBookmarkKeys');
     assertIncludes(files.history, 'existingBookmarkByKey');
   });

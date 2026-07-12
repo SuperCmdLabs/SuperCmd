@@ -25,10 +25,10 @@ export interface CommandInfo {
   browserUrl?: string;
   browserSourceProfileId?: string;
   browserTargetProfileLabel?: string;
-  browserTargetProfileBrowserId?: BrowserSearchSource;
+  browserTargetProfileBrowserId?: BrowserSearchSource | string;
   browserTargetProfileIconDataUrl?: string;
   browserAlternateProfileLabel?: string;
-  browserAlternateProfileBrowserId?: BrowserSearchSource;
+  browserAlternateProfileBrowserId?: BrowserSearchSource | string;
   browserAlternateProfileIconDataUrl?: string;
   browserProfileCount?: number;
   browserWindowId?: string;

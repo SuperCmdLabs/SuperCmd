@@ -91,6 +91,7 @@ export type UseLauncherKeyboardControlsOptions = {
       kind?: CommandInfo['browserResultKind'];
       url?: string;
       sourceProfileId?: string;
+      openInSourceProfile?: boolean;
       windowId?: string | number;
       tabId?: string | number;
     }

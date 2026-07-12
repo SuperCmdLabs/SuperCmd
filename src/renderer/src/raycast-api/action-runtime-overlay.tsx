@@ -112,7 +112,8 @@ export function createActionOverlayRuntime(deps: OverlayDeps) {
       }
 
       if (source && typeof source === 'object') {
-        const variants = [source.light, source.dark].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+        const sourceVariants = source as Record<string, unknown>;
+        const variants = [sourceVariants.light, sourceVariants.dark].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
         if (variants.length > 0) {
           const assetLikeVariants = variants.filter((value) => hasImageExtension(value));
           if (assetLikeVariants.length === 0) return true;

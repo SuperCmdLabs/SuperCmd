@@ -36,7 +36,7 @@ export interface UseAiChatReturn {
   setAiQuery: (value: string) => void;
   aiInputRef: React.RefObject<HTMLInputElement>;
   aiResponseRef: React.RefObject<HTMLDivElement>;
-  setAiAvailable: (value: boolean) => void;
+  setAiAvailable: React.Dispatch<React.SetStateAction<boolean>>;
   conversations: AiConversation[];
   activeConversationId: string | null;
   startAiChat: (searchQuery: string) => void;

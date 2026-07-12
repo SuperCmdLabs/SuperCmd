@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import * as Phosphor from '../../../../node_modules/@phosphor-icons/react/dist/index.es.js';
+import * as Phosphor from '@phosphor-icons/react';
 import { RAYCAST_ICON_NAMES, RAYCAST_ICON_VALUE_TO_NAME, type RaycastIconName } from './raycast-icon-enum';
 
 type PhosphorIconWeight = 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';

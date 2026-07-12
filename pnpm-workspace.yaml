@@ -1,0 +1,5 @@
+allowBuilds:
+  electron: true
+  esbuild: true
+  extract-file-icon: true
+  node-window-manager: true

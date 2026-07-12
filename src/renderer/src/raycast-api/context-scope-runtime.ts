@@ -89,7 +89,7 @@ export function withExtensionContext<T>(ctx: ExtensionContextSnapshot | undefine
   try {
     const value = fn();
     if (value && typeof (value as any).then === 'function') {
-      return (value as Promise<any>).finally(restore) as T;
+      return (value as unknown as Promise<any>).finally(restore) as T;
     }
     restore();
     return value;
