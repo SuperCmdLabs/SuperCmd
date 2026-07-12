@@ -13,6 +13,7 @@
 
 import { app, clipboard, dialog, BrowserWindow, SaveDialogOptions, OpenDialogOptions } from 'electron';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
@@ -46,6 +47,11 @@ export interface Note {
 // ─── Cache ──────────────────────────────────────────────────────────
 
 let notesCache: Note[] | null = null;
+const NOTES_SAVE_DEBOUNCE_MS = 250;
+let notesSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let notesSavePending = false;
+let notesSaveDrainPromise: Promise<void> | null = null;
+let notesSaveTempCounter = 0;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -88,13 +94,65 @@ function loadFromDisk(): Note[] {
   return [];
 }
 
-function saveToDisk(): void {
+async function writeNotesAtomically(data: string): Promise<void> {
+  const filePath = getNotesFilePath();
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${++notesSaveTempCounter}.tmp`;
+
   try {
-    const filePath = getNotesFilePath();
-    fs.writeFileSync(filePath, JSON.stringify(notesCache || [], null, 2), 'utf-8');
+    await fsp.writeFile(tempPath, data, 'utf-8');
+    await fsp.rename(tempPath, filePath);
   } catch (e) {
-    console.error('Failed to save notes to disk:', e);
+    fsp.unlink(tempPath).catch(() => {});
+    throw e;
   }
+}
+
+function clearNotesSaveTimer(): void {
+  if (notesSaveTimer) {
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = null;
+  }
+}
+
+function drainNotesSaveQueue(): Promise<void> {
+  if (notesSaveDrainPromise) return notesSaveDrainPromise;
+
+  notesSaveDrainPromise = (async () => {
+    clearNotesSaveTimer();
+    while (notesSavePending) {
+      notesSavePending = false;
+      const data = JSON.stringify(notesCache || [], null, 2);
+      try {
+        await writeNotesAtomically(data);
+      } catch (e) {
+        console.error('Failed to save notes to disk:', e);
+      }
+      clearNotesSaveTimer();
+    }
+  })().finally(() => {
+    notesSaveDrainPromise = null;
+  });
+
+  return notesSaveDrainPromise;
+}
+
+function saveToDisk(): void {
+  notesSavePending = true;
+  clearNotesSaveTimer();
+  notesSaveTimer = setTimeout(() => {
+    notesSaveTimer = null;
+    void drainNotesSaveQueue();
+  }, NOTES_SAVE_DEBOUNCE_MS);
+}
+
+export function hasPendingNotesSave(): boolean {
+  return notesSavePending || notesSaveTimer !== null || notesSaveDrainPromise !== null;
+}
+
+export async function flushNotesToDisk(): Promise<void> {
+  clearNotesSaveTimer();
+  if (!notesSavePending && !notesSaveDrainPromise) return;
+  await drainNotesSaveQueue();
 }
 
 const VALID_THEMES: Set<string> = new Set([

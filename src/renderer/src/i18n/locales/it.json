@@ -375,6 +375,12 @@
         "elevenlabsWarning": "STT di ElevenLabs selezionato. {action} la chiave API di ElevenLabs in Chiavi API.",
         "elevenlabsReady": "STT di ElevenLabs selezionato. La trascrizione cloud userà la tua chiave ElevenLabs.",
         "recognitionLanguage": "Lingua di riconoscimento",
+        "vocabulary": {
+          "label": "Vocabolario personalizzato",
+          "placeholder": "Kotlin, Electron, Raycast, SuperCmd…",
+          "hint": "Facoltativo. Elenca parole poco comuni, nomi o termini tecnici (separati da virgole o da nuove righe) per orientare il riconoscimento verso l'ortografia corretta.",
+          "tokenWarning": "Circa {count} token. Whisper usa all'incirca solo i primi 224: le parole oltre quel limite vengono ignorate."
+        },
         "providerInfo": {
           "parakeet": "Trascrizione offline sul dispositivo con Parakeet TDT v3. Viene eseguita su Apple Neural Engine. Richiede un riscaldamento del modello al primo utilizzo. Scarica il modello qui sotto prima di usare la dettatura.",
           "qwen3": "Trascrizione offline sul dispositivo con Qwen3 ASR. Supporta oltre 30 lingue, richiede macOS 15+ e si riscalda al primo utilizzo.",
@@ -610,6 +616,18 @@
         "opened": "Cartella degli script personalizzati aperta con uno script di esempio.",
         "openedExisting": "Cartella degli script personalizzati aperta.",
         "failed": "Impossibile aprire la cartella degli script personalizzati."
+      },
+      "appSearchScope": {
+        "title": "Ambito di ricerca delle applicazioni",
+        "description": "Cartelle in cui SuperCmd cerca le applicazioni installate da mostrare nel launcher.",
+        "add": "Aggiungi cartella",
+        "remove": "Rimuovi",
+        "empty": "Nessuna cartella aggiunta. Verranno usate le cartelle applicazioni di sistema predefinite.",
+        "added": "Cartella aggiunta all'ambito di ricerca.",
+        "removed": "Cartella rimossa dall'ambito di ricerca.",
+        "duplicate": "Cartella già presente nell'elenco.",
+        "failed": "Impossibile aggiornare l'ambito di ricerca.",
+        "restartHint": "Riavvia SuperCmd affinché le modifiche alle cartelle abbiano effetto."
       },
       "emojiPicker": {
         "enabled": "Abilita il selettore emoji",

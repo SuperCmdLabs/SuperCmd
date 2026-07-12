@@ -18,7 +18,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
+import { createAerospaceWorkspaceMover } from './aerospace-workspace';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
+import { createLocalAsrHelperStatusProbeCache } from './local-model-status-probe';
 import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
 import {
   loadSettings,
@@ -44,6 +46,11 @@ import {
 import type { AppSettings, BrowserProfileSetting, BrowserProfileFilters, BrowserProfileFilterKind, RelocateMode } from './settings-store';
 import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
+import {
+  createAIStreamIpcCoalescer,
+  forwardAIStreamChunksToIpc,
+  type AIStreamIpcCoalescer,
+} from './ai-stream-ipc';
 import { scanAppRemnants } from './app-uninstaller';
 import * as soulverCalculator from './soulver-calculator';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
@@ -100,6 +107,8 @@ import {
   togglePinClipboardItem,
   moveClipboardPinnedItem,
   pruneClipboardHistoryOlderThan,
+  flushClipboardHistoryWrites,
+  hasPendingClipboardHistoryWrites,
 } from './clipboard-manager';
 import {
   initSnippetStore,
@@ -193,6 +202,8 @@ import {
   exportNoteToFile,
   exportNotesToFile,
   importNotesFromFile,
+  flushNotesToDisk,
+  hasPendingNotesSave,
 } from './notes-store';
 import {
   initCanvasStore,
@@ -256,6 +267,7 @@ type ParakeetModelStatus = {
 };
 let parakeetModelStatus: ParakeetModelStatus | null = null;
 let parakeetModelEnsurePromise: Promise<string> | null = null;
+let parakeetModelStatusProbeCache: ReturnType<typeof createLocalAsrHelperStatusProbeCache<ParakeetModelStatus>> | null = null;
 
 // Persistent serve-mode process for fast transcription (models stay loaded in memory)
 let parakeetServerProcess: any = null; // ChildProcess
@@ -394,15 +406,7 @@ function getParakeetTranscriberBinaryPath(): string {
   return getNativeBinaryPath('parakeet-transcriber');
 }
 
-function getParakeetModelStatus(): ParakeetModelStatus {
-  if (parakeetModelStatus?.state === 'downloading') {
-    return { ...parakeetModelStatus };
-  }
-  if (parakeetModelStatus?.state === 'error') {
-    return { ...parakeetModelStatus };
-  }
-
-  // Ask the binary for the real status
+function readParakeetModelStatusFromHelper(): ParakeetModelStatus {
   const binaryPath = getParakeetTranscriberBinaryPath();
   try {
     if (!fs.existsSync(binaryPath)) {
@@ -447,9 +451,36 @@ function getParakeetModelStatus(): ParakeetModelStatus {
   return parakeetModelStatus;
 }
 
+function getParakeetModelStatusProbeCache(): ReturnType<typeof createLocalAsrHelperStatusProbeCache<ParakeetModelStatus>> {
+  if (!parakeetModelStatusProbeCache) {
+    parakeetModelStatusProbeCache = createLocalAsrHelperStatusProbeCache<ParakeetModelStatus>({
+      readStatus: readParakeetModelStatusFromHelper,
+    });
+  }
+  return parakeetModelStatusProbeCache;
+}
+
+function rememberParakeetModelStatus(status: ParakeetModelStatus): ParakeetModelStatus {
+  parakeetModelStatus = status;
+  getParakeetModelStatusProbeCache().rememberStatus(status);
+  return status;
+}
+
+function getParakeetModelStatus(options: { forceRefresh?: boolean } = {}): ParakeetModelStatus {
+  if (parakeetModelStatus?.state === 'downloading') {
+    return { ...parakeetModelStatus };
+  }
+  if (parakeetModelStatus?.state === 'error') {
+    return { ...parakeetModelStatus };
+  }
+
+  parakeetModelStatus = getParakeetModelStatusProbeCache().getStatus(options);
+  return parakeetModelStatus;
+}
+
 async function ensureParakeetModelDownloaded(): Promise<string> {
   // Check if already downloaded
-  const status = getParakeetModelStatus();
+  const status = getParakeetModelStatus({ forceRefresh: true });
   if (status.state === 'downloaded' && status.path) {
     return status.path;
   }
@@ -523,12 +554,12 @@ async function ensureParakeetModelDownloaded(): Promise<string> {
         });
       });
 
-      parakeetModelStatus = {
+      rememberParakeetModelStatus({
         state: 'downloaded',
         modelName: 'parakeet-tdt-0.6b-v3',
         path: modelPath,
         progress: 1,
-      };
+      });
       console.log(`[Parakeet] Models ready at ${modelPath}`);
       return modelPath;
     } catch (error) {
@@ -574,7 +605,7 @@ async function transcribeAudioWithParakeet(opts: {
   language?: string;
   mimeType?: string;
 }): Promise<string> {
-  const status = getParakeetModelStatus();
+  const status = getParakeetModelStatus({ forceRefresh: true });
   if (status.state === 'downloading') {
     throw new Error('Parakeet models are still downloading. Finish setup from onboarding or Settings -> AI -> SuperCmd Whisper.');
   }
@@ -612,6 +643,7 @@ type Qwen3ModelStatus = {
 };
 let qwen3ModelStatus: Qwen3ModelStatus | null = null;
 let qwen3ModelEnsurePromise: Promise<string> | null = null;
+let qwen3ModelStatusProbeCache: ReturnType<typeof createLocalAsrHelperStatusProbeCache<Qwen3ModelStatus>> | null = null;
 
 let qwen3ServerProcess: any = null;
 let qwen3ServerReady = false;
@@ -744,10 +776,7 @@ function sendQwen3Request(request: Record<string, any>): Promise<any> {
   });
 }
 
-function getQwen3ModelStatus(): Qwen3ModelStatus {
-  if (qwen3ModelStatus?.state === 'downloading') return { ...qwen3ModelStatus };
-  if (qwen3ModelStatus?.state === 'error') return { ...qwen3ModelStatus };
-
+function readQwen3ModelStatusFromHelper(): Qwen3ModelStatus {
   const binaryPath = getParakeetTranscriberBinaryPath();
   try {
     if (!fs.existsSync(binaryPath)) {
@@ -772,8 +801,31 @@ function getQwen3ModelStatus(): Qwen3ModelStatus {
   return qwen3ModelStatus;
 }
 
+function getQwen3ModelStatusProbeCache(): ReturnType<typeof createLocalAsrHelperStatusProbeCache<Qwen3ModelStatus>> {
+  if (!qwen3ModelStatusProbeCache) {
+    qwen3ModelStatusProbeCache = createLocalAsrHelperStatusProbeCache<Qwen3ModelStatus>({
+      readStatus: readQwen3ModelStatusFromHelper,
+    });
+  }
+  return qwen3ModelStatusProbeCache;
+}
+
+function rememberQwen3ModelStatus(status: Qwen3ModelStatus): Qwen3ModelStatus {
+  qwen3ModelStatus = status;
+  getQwen3ModelStatusProbeCache().rememberStatus(status);
+  return status;
+}
+
+function getQwen3ModelStatus(options: { forceRefresh?: boolean } = {}): Qwen3ModelStatus {
+  if (qwen3ModelStatus?.state === 'downloading') return { ...qwen3ModelStatus };
+  if (qwen3ModelStatus?.state === 'error') return { ...qwen3ModelStatus };
+
+  qwen3ModelStatus = getQwen3ModelStatusProbeCache().getStatus(options);
+  return qwen3ModelStatus;
+}
+
 async function ensureQwen3ModelDownloaded(): Promise<string> {
-  const status = getQwen3ModelStatus();
+  const status = getQwen3ModelStatus({ forceRefresh: true });
   if (status.state === 'downloaded' && status.path) return status.path;
   if (qwen3ModelEnsurePromise) return await qwen3ModelEnsurePromise;
 
@@ -817,7 +869,7 @@ async function ensureQwen3ModelDownloaded(): Promise<string> {
         });
       });
 
-      qwen3ModelStatus = { state: 'downloaded', modelName: 'qwen3-asr-0.6b', path: modelPath, progress: 1 };
+      rememberQwen3ModelStatus({ state: 'downloaded', modelName: 'qwen3-asr-0.6b', path: modelPath, progress: 1 });
       console.log(`[Qwen3] Models ready at ${modelPath}`);
       return modelPath;
     } catch (error) {
@@ -836,7 +888,7 @@ async function transcribeAudioWithQwen3(opts: {
   language?: string;
   mimeType?: string;
 }): Promise<string> {
-  const status = getQwen3ModelStatus();
+  const status = getQwen3ModelStatus({ forceRefresh: true });
   if (status.state === 'downloading') throw new Error('Qwen3 models are still downloading.');
   if (status.state !== 'downloaded') throw new Error('Qwen3 models have not been downloaded yet. Download them from Settings -> AI -> SuperCmd Whisper.');
 
@@ -3075,7 +3127,12 @@ function resolveAppIconDataUrl(appPath: string, size = 32): string | null {
 }
 let launcherEntryFrontmostApp: FrontmostAppContext | null = null;
 const registeredHotkeys = new Map<string, string>(); // shortcut → commandId
-const activeAIRequests = new Map<string, AbortController>(); // requestId → controller
+type ActiveAIRequest = {
+  controller: AbortController;
+  stream: AIStreamIpcCoalescer;
+};
+const activeAIRequests = new Map<string, ActiveAIRequest>(); // requestId → active request
+const activeOllamaPullRequests = new Map<string, AbortController>(); // requestId → controller
 const pendingOAuthCallbackUrls: string[] = [];
 let snippetExpanderProcess: any = null;
 let snippetExpanderStdoutBuffer = '';
@@ -3098,6 +3155,24 @@ let emojiPickerCurrentQuery = '';
 let emojiPickerCurrentPrefixLen = 1;
 let emojiPickerSelectedIdx = 0;
 let nativeSpeechProcess: any = null;
+
+function startActiveAIRequest(requestId: string, sender: { send: (channel: 'ai-stream-chunk', payload: { requestId: string; chunk: string }) => void }): ActiveAIRequest {
+  activeAIRequests.get(requestId)?.stream.flush();
+  const controller = new AbortController();
+  const request = {
+    controller,
+    stream: createAIStreamIpcCoalescer({ requestId, sender }),
+  };
+  activeAIRequests.set(requestId, request);
+  return request;
+}
+
+function finishActiveAIRequest(requestId: string, request: ActiveAIRequest): void {
+  request.stream.flush();
+  if (activeAIRequests.get(requestId) === request) {
+    activeAIRequests.delete(requestId);
+  }
+}
 let nativeSpeechStdoutBuffer = '';
 let nativeColorPickerPromise: Promise<any> | null = null;
 let keyboardLockProcess: any = null;
@@ -3198,48 +3273,12 @@ function setLauncherOverlayTopmost(enabled: boolean): void {
  * This is fire-and-forget — failures are silently ignored so we never
  * block or delay the launcher for users who don't use AeroSpace.
  */
-let aerospaceAvailable: boolean | null = null; // null = not yet checked
+const aerospaceWorkspaceMover = createAerospaceWorkspaceMover({
+  shouldRun: () => !!mainWindow && !mainWindow.isDestroyed(),
+});
+
 function moveWindowToCurrentAerospaceWorkspace(): void {
-  if (aerospaceAvailable === false || process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
-  try {
-    const { execFileSync } = require('child_process');
-    // Quick check: is AeroSpace running?  list-workspaces --focused
-    // exits 0 only when the server is up.
-    const focusedWs = String(
-      execFileSync('aerospace', ['list-workspaces', '--focused'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!focusedWs) return;
-    aerospaceAvailable = true;
-
-    // Find our window(s) by bundle-id
-    const windowsRaw = String(
-      execFileSync('aerospace', ['list-windows', '--all', '--app-bundle-id', 'com.supercmd.app', '--format', '%{window-id} %{workspace}'], {
-        timeout: 500,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }) || ''
-    ).trim();
-    if (!windowsRaw) return;
-
-    for (const line of windowsRaw.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const [windowId, currentWs] = parts;
-      if (currentWs === focusedWs) continue; // already on the right workspace
-      execFileSync('aerospace', ['move-node-to-workspace', focusedWs, '--window-id', windowId], {
-        timeout: 500,
-        stdio: 'ignore',
-      });
-    }
-  } catch (err: any) {
-    // ENOENT = `aerospace` binary not found — will never appear, so skip future calls.
-    if (err?.code === 'ENOENT') {
-      aerospaceAvailable = false;
-    }
-    // Other errors (server not running, command failed) are transient — retry next time.
-  }
+  aerospaceWorkspaceMover.requestMove();
 }
 
 function clearOAuthBlurHideSuppression(): void {
@@ -10245,6 +10284,7 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
         '-O', '-o', binaryPath,
         path.join(nativeDir, 'emoji-trigger-monitor.swift'),
         path.join(nativeDir, 'ax-caret-query.swift'),
+        path.join(nativeDir, 'emoji-caret-session-cache.swift'),
         '-framework', 'AppKit',
         '-framework', 'ApplicationServices',
       ]);
@@ -13316,19 +13356,23 @@ async function restartAndInstallAppUpdate(): Promise<boolean> {
       });
 
       triggerTimer = setTimeout(() => {
-        try {
-          if (process.platform === 'darwin') {
-            try {
-              appUpdater.autoInstallOnAppQuit = true;
-              appUpdater.autoRunAppAfterInstall = true;
-            } catch {}
-            appUpdater.quitAndInstall();
-          } else {
-            appUpdater.quitAndInstall(false, true);
+        void (async () => {
+          try {
+            await flushNotesToDisk();
+            await flushClipboardHistoryWrites();
+            if (process.platform === 'darwin') {
+              try {
+                appUpdater.autoInstallOnAppQuit = true;
+                appUpdater.autoRunAppAfterInstall = true;
+              } catch {}
+              appUpdater.quitAndInstall();
+            } else {
+              appUpdater.quitAndInstall(false, true);
+            }
+          } catch (error: any) {
+            finish(false, error);
           }
-        } catch (error: any) {
-          finish(false, error);
-        }
+        })();
       }, 40);
 
       timeoutTimer = setTimeout(() => {
@@ -16450,12 +16494,12 @@ return appURL's |path|() as text`,
     return searchClipboardHistory(query);
   });
 
-  ipcMain.handle('clipboard-clear-history', () => {
-    clearClipboardHistory();
+  ipcMain.handle('clipboard-clear-history', async () => {
+    await clearClipboardHistory();
   });
 
-  ipcMain.handle('clipboard-delete-item', (_event: any, id: string) => {
-    return deleteClipboardItem(id);
+  ipcMain.handle('clipboard-delete-item', async (_event: any, id: string) => {
+    return await deleteClipboardItem(id);
   });
 
   ipcMain.handle('clipboard-copy-item', (_event: any, id: string) => {
@@ -17563,8 +17607,8 @@ if let tiff = image?.tiffRepresentation {
         return;
       }
 
-      const controller = new AbortController();
-      activeAIRequests.set(requestId, controller);
+      const activeRequest = startActiveAIRequest(requestId, event.sender);
+      const { controller, stream } = activeRequest;
 
       try {
         const memoryContextSystemPrompt = await buildMemoryContextSystemPrompt(
@@ -17584,29 +17628,34 @@ if let tiff = image?.tiffRepresentation {
           signal: controller.signal,
         });
 
-        for await (const chunk of gen) {
-          if (controller.signal.aborted) break;
-          event.sender.send('ai-stream-chunk', { requestId, chunk });
-        }
+        await forwardAIStreamChunksToIpc(gen, stream, controller.signal);
 
         if (!controller.signal.aborted) {
+          stream.flush();
           event.sender.send('ai-stream-done', { requestId });
         }
       } catch (e: any) {
         if (!controller.signal.aborted) {
+          stream.flush();
           event.sender.send('ai-stream-error', { requestId, error: e?.message || 'AI request failed' });
         }
       } finally {
-        activeAIRequests.delete(requestId);
+        finishActiveAIRequest(requestId, activeRequest);
       }
     }
   );
 
   ipcMain.handle('ai-cancel', (_event: any, requestId: string) => {
-    const controller = activeAIRequests.get(requestId);
-    if (controller) {
-      controller.abort();
+    const activeRequest = activeAIRequests.get(requestId);
+    if (activeRequest) {
+      activeRequest.stream.flush();
+      activeRequest.controller.abort();
       activeAIRequests.delete(requestId);
+    }
+    const ollamaPullController = activeOllamaPullRequests.get(requestId);
+    if (ollamaPullController) {
+      ollamaPullController.abort();
+      activeOllamaPullRequests.delete(requestId);
     }
   });
 
@@ -17628,8 +17677,8 @@ if let tiff = image?.tiffRepresentation {
         return;
       }
 
-      const controller = new AbortController();
-      activeAIRequests.set(requestId, controller);
+      const activeRequest = startActiveAIRequest(requestId, event.sender);
+      const { controller, stream } = activeRequest;
 
       try {
         const latestUser = [...(messages || [])].reverse().find((m) => m.role === 'user');
@@ -17650,20 +17699,19 @@ if let tiff = image?.tiffRepresentation {
           signal: controller.signal,
         });
 
-        for await (const chunk of gen) {
-          if (controller.signal.aborted) break;
-          event.sender.send('ai-stream-chunk', { requestId, chunk });
-        }
+        await forwardAIStreamChunksToIpc(gen, stream, controller.signal);
 
         if (!controller.signal.aborted) {
+          stream.flush();
           event.sender.send('ai-stream-done', { requestId });
         }
       } catch (e: any) {
         if (!controller.signal.aborted) {
+          stream.flush();
           event.sender.send('ai-stream-error', { requestId, error: e?.message || 'AI request failed' });
         }
       } finally {
-        activeAIRequests.delete(requestId);
+        finishActiveAIRequest(requestId, activeRequest);
       }
     }
   );
@@ -17697,11 +17745,11 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('parakeet-download-model', async () => {
     await ensureParakeetModelDownloaded();
-    return getParakeetModelStatus();
+    return getParakeetModelStatus({ forceRefresh: true });
   });
 
   ipcMain.handle('parakeet-warmup', async () => {
-    const status = getParakeetModelStatus();
+    const status = getParakeetModelStatus({ forceRefresh: true });
     if (status.state !== 'downloaded') {
       return { ready: false, error: 'Models not downloaded' };
     }
@@ -17722,11 +17770,11 @@ if let tiff = image?.tiffRepresentation {
 
   ipcMain.handle('qwen3-download-model', async () => {
     await ensureQwen3ModelDownloaded();
-    return getQwen3ModelStatus();
+    return getQwen3ModelStatus({ forceRefresh: true });
   });
 
   ipcMain.handle('qwen3-warmup', async () => {
-    const status = getQwen3ModelStatus();
+    const status = getQwen3ModelStatus({ forceRefresh: true });
     if (status.state !== 'downloaded') {
       return { ready: false, error: 'Models not downloaded' };
     }
@@ -18189,7 +18237,7 @@ if let tiff = image?.tiffRepresentation {
       const mod = url.protocol === 'https:' ? require('https') : require('http');
 
       const controller = new AbortController();
-      activeAIRequests.set(requestId, controller);
+      activeOllamaPullRequests.set(requestId, controller);
 
       const body = JSON.stringify({ name: modelName, stream: true });
 
@@ -18210,7 +18258,7 @@ if let tiff = image?.tiffRepresentation {
                 requestId,
                 error: `HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`,
               });
-              activeAIRequests.delete(requestId);
+              activeOllamaPullRequests.delete(requestId);
             });
             return;
           }
@@ -18254,7 +18302,7 @@ if let tiff = image?.tiffRepresentation {
             if (!controller.signal.aborted) {
               event.sender.send('ollama-pull-done', { requestId });
             }
-            activeAIRequests.delete(requestId);
+            activeOllamaPullRequests.delete(requestId);
           });
         }
       );
@@ -18266,7 +18314,7 @@ if let tiff = image?.tiffRepresentation {
             error: err.message || 'Failed to pull model',
           });
         }
-        activeAIRequests.delete(requestId);
+        activeOllamaPullRequests.delete(requestId);
       });
 
       if (controller.signal.aborted) {
@@ -19343,8 +19391,42 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let pendingAsyncStorageQuitFlushComplete = false;
+let pendingAsyncStorageQuitFlushInProgress = false;
+
+app.on('before-quit', (event: any) => {
   prepareWindowsForAppQuit();
+
+  const updateRestartInProgress = Boolean(appUpdaterRestartPromise) || appUpdaterStatusSnapshot.state === 'restarting';
+  const shouldFlushNotes = hasPendingNotesSave();
+  const shouldFlushClipboard = !updateRestartInProgress && hasPendingClipboardHistoryWrites();
+
+  if (
+    pendingAsyncStorageQuitFlushComplete ||
+    pendingAsyncStorageQuitFlushInProgress ||
+    (!shouldFlushNotes && !shouldFlushClipboard)
+  ) {
+    return;
+  }
+
+  pendingAsyncStorageQuitFlushInProgress = true;
+  event.preventDefault();
+  Promise.all([
+    shouldFlushNotes
+      ? flushNotesToDisk().catch((error) => {
+          console.error('[Notes] Failed to flush pending saves before quit:', error);
+        })
+      : Promise.resolve(),
+    shouldFlushClipboard
+      ? flushClipboardHistoryWrites().catch((error) => {
+          console.error('Failed to flush clipboard history before quit:', error);
+        })
+      : Promise.resolve(),
+  ]).finally(() => {
+    pendingAsyncStorageQuitFlushComplete = true;
+    pendingAsyncStorageQuitFlushInProgress = false;
+    app.quit();
+  });
 });
 
 app.on('will-quit', () => {
@@ -19370,7 +19452,7 @@ app.on('will-quit', () => {
   killParakeetServer();
   killQwen3Server();
   killAudioCapturer();
-  stopClipboardMonitor();
+  void stopClipboardMonitor();
   stopSnippetExpander();
   stopEmojiTriggerMonitor();
   stopFileSearchIndexing();

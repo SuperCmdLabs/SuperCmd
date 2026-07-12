@@ -7,6 +7,113 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 type AICreativity = 'none' | 'low' | 'medium' | 'high' | 'maximum' | number;
 
+export const RAYCAST_AI_STREAM_FLUSH_INTERVAL_MS = 32;
+
+interface RaycastAIStreamDataRef {
+  current: string;
+}
+
+export interface RaycastAIStreamBatcherOptions {
+  dataRef: RaycastAIStreamDataRef;
+  setVisibleData: (data: string) => void;
+  requestFrame?: (callback: () => void) => number;
+  cancelFrame?: (handle: number) => void;
+  setTimer?: (callback: () => void, delayMs: number) => ReturnType<typeof globalThis.setTimeout>;
+  clearTimer?: (handle: ReturnType<typeof globalThis.setTimeout>) => void;
+  flushDelayMs?: number;
+}
+
+export interface RaycastAIStreamBatcher {
+  appendChunk: (chunk: string) => void;
+  cancelPendingFlush: () => void;
+  flush: () => void;
+  reset: (data?: string) => void;
+}
+
+function createDefaultRequestFrame(): ((callback: () => void) => number) | undefined {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    return undefined;
+  }
+  return (callback) => window.requestAnimationFrame(() => callback());
+}
+
+function createDefaultCancelFrame(): ((handle: number) => void) | undefined {
+  if (typeof window === 'undefined' || typeof window.cancelAnimationFrame !== 'function') {
+    return undefined;
+  }
+  return (handle) => window.cancelAnimationFrame(handle);
+}
+
+export function createRaycastAIStreamBatcher({
+  dataRef,
+  setVisibleData,
+  requestFrame = createDefaultRequestFrame(),
+  cancelFrame = createDefaultCancelFrame(),
+  setTimer = globalThis.setTimeout.bind(globalThis),
+  clearTimer = globalThis.clearTimeout.bind(globalThis),
+  flushDelayMs = RAYCAST_AI_STREAM_FLUSH_INTERVAL_MS,
+}: RaycastAIStreamBatcherOptions): RaycastAIStreamBatcher {
+  let visibleData = dataRef.current;
+  let pendingFrame: number | null = null;
+  let pendingTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  const publishVisibleData = () => {
+    const nextData = dataRef.current;
+    if (nextData === visibleData) return;
+    visibleData = nextData;
+    setVisibleData(nextData);
+  };
+
+  const cancelPendingFlush = () => {
+    if (pendingFrame !== null) {
+      cancelFrame?.(pendingFrame);
+      pendingFrame = null;
+    }
+    if (pendingTimer !== null) {
+      clearTimer(pendingTimer);
+      pendingTimer = null;
+    }
+  };
+
+  const flush = () => {
+    cancelPendingFlush();
+    publishVisibleData();
+  };
+
+  const runScheduledFlush = () => {
+    pendingFrame = null;
+    pendingTimer = null;
+    publishVisibleData();
+  };
+
+  const scheduleFlush = () => {
+    if (pendingFrame !== null || pendingTimer !== null) return;
+
+    if (requestFrame) {
+      pendingFrame = requestFrame(runScheduledFlush);
+      return;
+    }
+
+    pendingTimer = setTimer(runScheduledFlush, flushDelayMs);
+  };
+
+  return {
+    appendChunk(chunk: string) {
+      if (!chunk) return;
+      dataRef.current += chunk;
+      scheduleFlush();
+    },
+    cancelPendingFlush,
+    flush,
+    reset(data = '') {
+      cancelPendingFlush();
+      dataRef.current = data;
+      visibleData = data;
+      setVisibleData(data);
+    },
+  };
+}
+
 export function useAI(
   prompt: string,
   options?: {
@@ -24,10 +131,19 @@ export function useAI(
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
+  const dataRef = useRef('');
+  const streamBatcherRef = useRef<RaycastAIStreamBatcher | null>(null);
   const promptRef = useRef(prompt);
   const optionsRef = useRef(options);
   promptRef.current = prompt;
   optionsRef.current = options;
+
+  if (!streamBatcherRef.current) {
+    streamBatcherRef.current = createRaycastAIStreamBatcher({
+      dataRef,
+      setVisibleData: setData,
+    });
+  }
 
   const shouldExecute = options?.execute !== false;
   const stream = options?.stream !== false;
@@ -35,6 +151,7 @@ export function useAI(
   const run = useCallback(() => {
     if (!promptRef.current) return;
     const opts = optionsRef.current;
+    const streamBatcher = streamBatcherRef.current;
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -42,7 +159,7 @@ export function useAI(
 
     setIsLoading(true);
     setError(undefined);
-    setData('');
+    streamBatcher?.reset('');
 
     opts?.onWillExecute?.([promptRef.current]);
 
@@ -64,20 +181,22 @@ export function useAI(
     if (stream) {
       sp.on('data', (chunk: string) => {
         if (!controller.signal.aborted) {
-          setData((prev) => prev + chunk);
+          streamBatcher?.appendChunk(chunk);
         }
       });
     }
 
     sp.then((fullText: string) => {
       if (!controller.signal.aborted) {
-        if (!stream) setData(fullText);
+        dataRef.current = fullText;
+        streamBatcher?.flush();
         setIsLoading(false);
         opts?.onData?.(fullText);
       }
     }).catch((err: any) => {
       if (!controller.signal.aborted) {
         const e = err instanceof Error ? err : new Error(err?.message || 'AI request failed');
+        streamBatcher?.flush();
         setError(e);
         setIsLoading(false);
         opts?.onError?.(e);
@@ -91,6 +210,7 @@ export function useAI(
     }
     return () => {
       abortRef.current?.abort();
+      streamBatcherRef.current?.cancelPendingFlush();
     };
   }, [shouldExecute, run]);
 

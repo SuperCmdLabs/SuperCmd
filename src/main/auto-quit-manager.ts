@@ -37,6 +37,8 @@ const MUSIC_BUNDLE_IDS = new Set([
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let lastFrontmostAt = new Map<string, number>(); // bundleId → timestamp
 let autoQuitApps: AutoQuitAppEntry[] = [];
+let trackedBundleIds = new Set<string>();
+let trackedMusicBundleIds = new Set<string>();
 let checking = false;
 
 /**
@@ -134,6 +136,61 @@ async function isMusicPlaying(): Promise<boolean> {
   }
 }
 
+function rebuildTrackedBundleIds(): void {
+  trackedBundleIds = new Set();
+  trackedMusicBundleIds = new Set();
+  for (const entry of autoQuitApps) {
+    trackedBundleIds.add(entry.bundleId);
+    if (MUSIC_BUNDLE_IDS.has(entry.bundleId)) {
+      trackedMusicBundleIds.add(entry.bundleId);
+    }
+  }
+}
+
+function setAutoQuitApps(apps: AutoQuitAppEntry[]): void {
+  autoQuitApps = apps;
+  rebuildTrackedBundleIds();
+}
+
+function seedMissingLastFrontmostTimestamps(now: number): void {
+  for (const app of autoQuitApps) {
+    if (!lastFrontmostAt.has(app.bundleId)) {
+      lastFrontmostAt.set(app.bundleId, now);
+    }
+  }
+}
+
+function getDueAutoQuitCandidates(now: number): AutoQuitAppEntry[] {
+  const dueCandidates: AutoQuitAppEntry[] = [];
+
+  for (const entry of autoQuitApps) {
+    if (PROTECTED_BUNDLE_IDS.has(entry.bundleId)) continue;
+
+    const lastActive = lastFrontmostAt.get(entry.bundleId);
+    if (lastActive === undefined) {
+      // First time seeing this app; record now as the inactivity baseline.
+      lastFrontmostAt.set(entry.bundleId, now);
+      continue;
+    }
+
+    const inactiveMs = now - lastActive;
+    const timeoutMs = entry.timeoutSeconds * 1000;
+    if (inactiveMs >= timeoutMs) {
+      dueCandidates.push(entry);
+    }
+  }
+
+  return dueCandidates;
+}
+
+function pruneLastFrontmostEntries(frontmostBundleId: string | null): void {
+  for (const bundleId of lastFrontmostAt.keys()) {
+    if (!trackedBundleIds.has(bundleId) && bundleId !== frontmostBundleId) {
+      lastFrontmostAt.delete(bundleId);
+    }
+  }
+}
+
 /**
  * Check all tracked apps and quit those that exceeded their timeout
  */
@@ -142,56 +199,48 @@ async function checkAndQuit(): Promise<void> {
   if (autoQuitApps.length === 0) return;
   checking = true;
   try {
-    // Pause all auto-quit if system is recording
-    const recording = await isSystemRecording();
-    if (recording) return;
+    const now = Date.now();
+    const dueCandidates = getDueAutoQuitCandidates(now);
+    if (dueCandidates.length === 0) {
+      pruneLastFrontmostEntries(null);
+      return;
+    }
 
     const frontmostBundleId = await getFrontmostBundleId();
     if (!frontmostBundleId) return;
 
-    // Check if music is playing (protect music apps)
-    const musicPlaying = await isMusicPlaying();
-
-    const now = Date.now();
-
     // Update frontmost timestamp
     lastFrontmostAt.set(frontmostBundleId, now);
 
-    // Check each auto-quit app
-    for (const entry of autoQuitApps) {
-      // Skip if this app is currently frontmost
-      if (entry.bundleId === frontmostBundleId) continue;
+    const nonFrontmostDueCandidates = dueCandidates.filter(
+      (entry) => entry.bundleId !== frontmostBundleId
+    );
+    if (nonFrontmostDueCandidates.length === 0) {
+      pruneLastFrontmostEntries(frontmostBundleId);
+      return;
+    }
 
-      // Skip protected apps
-      if (PROTECTED_BUNDLE_IDS.has(entry.bundleId)) continue;
+    // Pause auto-quit only when a non-frontmost tracked app is actually due.
+    const recording = await isSystemRecording();
+    if (recording) {
+      pruneLastFrontmostEntries(frontmostBundleId);
+      return;
+    }
 
-      // Skip music apps if music is playing
+    const hasDueMusicApp = nonFrontmostDueCandidates.some((entry) =>
+      trackedMusicBundleIds.has(entry.bundleId)
+    );
+    const musicPlaying = hasDueMusicApp ? await isMusicPlaying() : false;
+
+    for (const entry of nonFrontmostDueCandidates) {
       if (musicPlaying && MUSIC_BUNDLE_IDS.has(entry.bundleId)) continue;
 
-      const lastActive = lastFrontmostAt.get(entry.bundleId);
-      if (lastActive === undefined) {
-        // First time seeing this app — record now as baseline
-        lastFrontmostAt.set(entry.bundleId, now);
-        continue;
-      }
-
-      const inactiveMs = now - lastActive;
-      const timeoutMs = entry.timeoutSeconds * 1000;
-
-      if (inactiveMs >= timeoutMs) {
-        await quitApp(entry.bundleId);
-        // Remove from tracking so we don't try to quit again
-        lastFrontmostAt.delete(entry.bundleId);
-      }
+      await quitApp(entry.bundleId);
+      // Remove from tracking so we don't try to quit again
+      lastFrontmostAt.delete(entry.bundleId);
     }
 
-    // Prune lastFrontmostAt entries for apps no longer tracked or frontmost
-    const trackedBundleIds = new Set(autoQuitApps.map((e) => e.bundleId));
-    for (const bundleId of lastFrontmostAt.keys()) {
-      if (!trackedBundleIds.has(bundleId) && bundleId !== frontmostBundleId) {
-        lastFrontmostAt.delete(bundleId);
-      }
-    }
+    pruneLastFrontmostEntries(frontmostBundleId);
   } finally {
     checking = false;
   }
@@ -201,18 +250,13 @@ async function checkAndQuit(): Promise<void> {
  * Start the auto-quit polling loop
  */
 export function startAutoQuit(apps: AutoQuitAppEntry[]): void {
-  autoQuitApps = apps;
-  if (pollInterval) return; // Already running
+  setAutoQuitApps(apps);
   if (apps.length === 0) return;
 
   // Initialize all tracked apps with current time
-  const now = Date.now();
-  for (const app of apps) {
-    if (!lastFrontmostAt.has(app.bundleId)) {
-      lastFrontmostAt.set(app.bundleId, now);
-    }
-  }
+  seedMissingLastFrontmostTimestamps(Date.now());
 
+  if (pollInterval) return; // Already running
   pollInterval = setInterval(checkAndQuit, 5000);
 }
 
@@ -230,12 +274,14 @@ export function stopAutoQuit(): void {
  * Update the app list (restarts polling if needed)
  */
 export function updateAutoQuitApps(apps: AutoQuitAppEntry[]): void {
-  autoQuitApps = apps;
+  setAutoQuitApps(apps);
   if (apps.length === 0) {
     stopAutoQuit();
     lastFrontmostAt.clear();
   } else if (!pollInterval) {
     startAutoQuit(apps);
+  } else {
+    seedMissingLastFrontmostTimestamps(Date.now());
   }
 }
 
@@ -251,6 +297,7 @@ export function addAutoQuitApp(entry: AutoQuitAppEntry): void {
   } else {
     autoQuitApps.push(entry);
   }
+  rebuildTrackedBundleIds();
   // Set baseline timestamp
   lastFrontmostAt.set(entry.bundleId, Date.now());
   if (!pollInterval) {
@@ -262,7 +309,7 @@ export function addAutoQuitApp(entry: AutoQuitAppEntry): void {
  * Remove an app from auto-quit
  */
 export function removeAutoQuitApp(bundleId: string): void {
-  autoQuitApps = autoQuitApps.filter(a => a.bundleId !== bundleId);
+  setAutoQuitApps(autoQuitApps.filter(a => a.bundleId !== bundleId));
   lastFrontmostAt.delete(bundleId);
   if (autoQuitApps.length === 0) {
     stopAutoQuit();

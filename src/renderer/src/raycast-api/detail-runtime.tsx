@@ -90,7 +90,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
 
       for (const node of allChildren) {
         if (React.isValidElement(node)) {
-          const typeRecord = node.type as Record<string, unknown> | null;
+          const typeRecord = node.type as unknown as Record<string, unknown> | null;
           if (typeRecord?.[DETAIL_METADATA_RUNTIME_MARKER] === true) {
             metadataNodes.push(node);
             continue;
@@ -290,7 +290,7 @@ export function createDetailRuntime(deps: CreateDetailRuntimeDeps) {
   );
 
   const MetadataComponent = ({ children }: { children?: React.ReactNode }) => <div className="space-y-4">{children}</div>;
-  (MetadataComponent as Record<string, unknown>)[DETAIL_METADATA_RUNTIME_MARKER] = true;
+  (MetadataComponent as unknown as Record<string, unknown>)[DETAIL_METADATA_RUNTIME_MARKER] = true;
   MetadataComponent.displayName = 'Detail.Metadata';
 
   const Metadata = Object.assign(

@@ -12,7 +12,9 @@ import itMessages from './locales/it.json';
 export type SupportedAppLocale = 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it';
 export type AppLanguageSetting = 'system' | SupportedAppLocale;
 export type TranslationValues = Record<string, string | number | boolean | null | undefined>;
-type MessageTree = Record<string, string | MessageTree>;
+interface MessageTree {
+  [key: string]: string | MessageTree;
+}
 
 export const DEFAULT_APP_LANGUAGE: AppLanguageSetting = 'system';
 export const FALLBACK_APP_LOCALE: SupportedAppLocale = 'en';

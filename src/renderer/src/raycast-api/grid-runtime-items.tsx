@@ -4,9 +4,19 @@
  * Contains grid item registration contexts and row/cell renderers.
  */
 
-import React, { createContext, useContext, useLayoutEffect, useRef } from 'react';
+import React, { createContext, useContext, useLayoutEffect, useMemo, useRef } from 'react';
 import { resolveTintColor } from './icon-runtime-assets';
 import { renderIcon } from './icon-runtime-render';
+
+export interface GridSectionRegistration {
+  id: string;
+  title?: string;
+  subtitle?: string;
+  columns?: number;
+  aspectRatio?: string;
+  fit?: string;
+  inset?: string;
+}
 
 export interface GridItemRegistration {
   id: string;
@@ -20,7 +30,7 @@ export interface GridItemRegistration {
     accessory?: any;
     quickLook?: { name?: string; path: string };
   };
-  sectionTitle?: string;
+  section?: GridSectionRegistration;
   order: number;
 }
 
@@ -31,33 +41,53 @@ export interface GridRegistryAPI {
 
 export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) {
   let gridItemOrderCounter = 0;
+  let gridSectionOrderCounter = 0;
 
   const GridRegistryContext = createContext<GridRegistryAPI>({
     set: () => {},
     delete: () => {},
   });
-  const GridSectionTitleContext = createContext<string | undefined>(undefined);
+  const GridSectionContext = createContext<GridSectionRegistration | undefined>(undefined);
 
   function GridItemComponent(props: any) {
     const registry = useContext(GridRegistryContext);
-    const sectionTitle = useContext(GridSectionTitleContext);
+    const section = useContext(GridSectionContext);
     const stableId = useRef(props.id || `__gi_${++gridItemOrderCounter}`).current;
     const orderRef = useRef<number | null>(null);
     if (orderRef.current === null) orderRef.current = ++gridItemOrderCounter;
 
     useLayoutEffect(() => {
-      registry.set(stableId, { props, sectionTitle, order: orderRef.current! });
+      registry.set(stableId, { props, section, order: orderRef.current! });
       return () => registry.delete(stableId);
-    }, [props, registry, sectionTitle, stableId]);
+    }, [props, registry, section, stableId]);
 
     return null;
   }
 
-  function GridSectionComponent({ children, title }: { children?: React.ReactNode; title?: string }) {
-    return <GridSectionTitleContext.Provider value={title}>{children}</GridSectionTitleContext.Provider>;
+  function GridSectionComponent({ children, title, subtitle, columns, aspectRatio, fit, inset }: any) {
+    const stableId = useRef(`__gs_${++gridSectionOrderCounter}`).current;
+    const section = useMemo(
+      () => ({ id: stableId, title, subtitle, columns, aspectRatio, fit, inset }),
+      [aspectRatio, columns, fit, inset, stableId, subtitle, title],
+    );
+
+    return <GridSectionContext.Provider value={section}>{children}</GridSectionContext.Provider>;
   }
 
-  function GridItemRenderer({ title, subtitle, content, isSelected, dataIdx, onSelect, onActivate, onContextAction }: any) {
+  function GridItemRenderer({
+    title,
+    subtitle,
+    content,
+    accessory,
+    isSelected,
+    dataIdx,
+    itemHeight,
+    fit,
+    inset,
+    onSelect,
+    onActivate,
+    onContextAction,
+  }: any) {
     const isImageLikeSourceString = (value: string): boolean => {
       const source = String(value || '').trim();
       if (!source) return false;
@@ -158,6 +188,17 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
 
     const swatchColor = getGridColor(content);
     const renderableContent = swatchColor ? null : toRenderableContent(content);
+    const accessoryIcon = accessory?.icon ? toRenderableContent(accessory.icon) : null;
+    const accessoryTitle = typeof accessory?.tooltip === 'string' ? accessory.tooltip : undefined;
+    const contentFitClass = fit === 'fill' ? 'w-full h-full object-cover' : 'w-full h-full object-contain';
+    const insetClass =
+      inset === 'zero'
+        ? 'p-0'
+        : inset === 'md'
+          ? 'p-3'
+          : inset === 'lg'
+            ? 'p-5'
+            : 'p-1.5';
 
     return (
       <div
@@ -168,7 +209,7 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
             : 'border-[var(--launcher-card-border)] bg-[var(--launcher-card-bg)] hover:bg-[var(--launcher-card-hover-bg)]'
         }`}
         style={{
-          height: '160px',
+          height: `${itemHeight || 160}px`,
           boxShadow: isSelected
             ? '0 0 0 2px rgba(var(--on-surface-rgb), 0.24), inset 0 0 0 1px rgba(var(--on-surface-rgb), 0.16)'
             : undefined,
@@ -181,12 +222,12 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
         onMouseMove={onSelect}
         onContextMenu={onContextAction}
       >
-        <div className="flex-1 flex items-center justify-center overflow-hidden p-1.5 min-h-0">
+        <div className={`flex-1 flex items-center justify-center overflow-hidden min-h-0 ${insetClass}`}>
           {swatchColor ? (
             <div className="w-full h-full rounded" style={{ backgroundColor: swatchColor }} />
           ) : renderableContent ? (
             <div className="w-full h-full flex items-center justify-center">
-              {renderIcon(renderableContent, 'w-full h-full object-contain')}
+              {renderIcon(renderableContent, contentFitClass)}
             </div>
           ) : (
             <div className="w-full h-full bg-[var(--surface-tint-2)] rounded flex items-center justify-center text-[var(--text-subtle)] text-2xl">
@@ -194,9 +235,14 @@ export function createGridItemsRuntime(resolveIconSrc: (src: string) => string) 
             </div>
           )}
         </div>
-        {title && (
+        {(title || subtitle || accessoryIcon) && (
           <div className="px-2 pb-2 pt-1 flex-shrink-0">
-            <p className="truncate text-[11px] text-[var(--text-secondary)] text-center">{title}</p>
+            {accessoryIcon && (
+              <div className="mb-1 flex justify-center text-[var(--text-subtle)]" title={accessoryTitle}>
+                {renderIcon(accessoryIcon, 'w-3 h-3 object-contain')}
+              </div>
+            )}
+            {title && <p className="truncate text-[11px] text-[var(--text-secondary)] text-center">{title}</p>}
             {subtitle && <p className="truncate text-[9px] text-[var(--text-subtle)] text-center">{subtitle}</p>}
           </div>
         )}

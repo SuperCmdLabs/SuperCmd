@@ -127,10 +127,15 @@ func writeWaveFile(samples: [Float], sampleRate: Double, toPath path: String) th
   data.append(contentsOf: withUnsafeBytes(of: UInt32(littleEndian: dataSize)) { Array($0) })
 
   // PCM samples (float32 → int16)
+  var pcmSamples = [Int16]()
+  pcmSamples.reserveCapacity(samples.count)
   for sample in samples {
     let clamped = max(-1.0, min(1.0, sample))
     let intVal = Int16(clamped * Float(Int16.max))
-    data.append(contentsOf: withUnsafeBytes(of: Int16(littleEndian: intVal)) { Array($0) })
+    pcmSamples.append(Int16(littleEndian: intVal))
+  }
+  pcmSamples.withUnsafeBytes { rawBuffer in
+    data.append(rawBuffer.bindMemory(to: UInt8.self))
   }
 
   try data.write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -279,6 +284,11 @@ class AudioCapturer {
   // MARK: Buffer processing
 
   private func processBuffer(_ buffer: AVAudioPCMBuffer) {
+    let now = Date()
+    let shouldUpdateMeter = now.timeIntervalSince(lastMeterAt) >= meterInterval
+
+    guard isRecording || shouldUpdateMeter else { return }
+
     guard let converted = convertBuffer(buffer),
           converted.frameLength > 0,
           let samples = converted.floatChannelData?[0]
@@ -290,25 +300,36 @@ class AudioCapturer {
       ringBuffer.append(UnsafeBufferPointer(start: samples, count: sampleCount))
     }
 
-    // Compute meter
-    let now = Date()
-    if now.timeIntervalSince(lastMeterAt) >= meterInterval {
-      var sumSquares: Float = 0
-      var peak: Float = 0
-      for i in 0..<sampleCount {
-        let s = samples[i]
-        sumSquares += s * s
-        peak = max(peak, abs(s))
-      }
-      let rms = sqrt(sumSquares / Float(max(1, sampleCount)))
-      meterAverage = Double(min(1, rms * 5))
-      meterPeak = Double(min(1, peak * 5))
-      lastMeterAt = now
+    if shouldUpdateMeter {
+      updateMeter(samples: samples, sampleCount: sampleCount, stride: 1, now: now)
     }
   }
 
   func getMeter() -> [String: Double] {
     return ["average": meterAverage, "peak": meterPeak]
+  }
+
+  private func updateMeter(
+    samples: UnsafePointer<Float>,
+    sampleCount: Int,
+    stride: Int,
+    now: Date
+  ) {
+    var sumSquares: Float = 0
+    var peak: Float = 0
+    for i in 0..<sampleCount {
+      let s = samples[i * stride]
+      sumSquares += s * s
+      peak = max(peak, abs(s))
+    }
+    updateMeter(sumSquares: sumSquares, peak: peak, sampleCount: sampleCount, now: now)
+  }
+
+  private func updateMeter(sumSquares: Float, peak: Float, sampleCount: Int, now: Date) {
+    let rms = sqrt(sumSquares / Float(max(1, sampleCount)))
+    meterAverage = Double(min(1, rms * 5))
+    meterPeak = Double(min(1, peak * 5))
+    lastMeterAt = now
   }
 
   // MARK: Audio conversion

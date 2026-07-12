@@ -551,6 +551,7 @@ const StoreTab: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
         const key = event.key.toLowerCase() === 'backspace' ? 'backspace' : event.key.toLowerCase();
         for (const action of storeActions) {
           if (!action.shortcut) continue;
+          if (!action.shortcut.key) continue;
           const mods = action.shortcut.modifiers || [];
           const needsMeta = mods.includes('cmd') || mods.includes('ctrl');
           const needsShift = mods.includes('shift');

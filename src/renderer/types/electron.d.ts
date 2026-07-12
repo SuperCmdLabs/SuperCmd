@@ -1344,9 +1344,9 @@ export interface ElectronAPI {
   ollamaPull: (requestId: string, modelName: string) => Promise<void>;
   ollamaDelete: (modelName: string) => Promise<{ success: boolean; error: string | null }>;
   ollamaOpenDownload: () => Promise<boolean>;
-  onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => void;
-  onOllamaPullDone: (callback: (data: { requestId: string }) => void) => void;
-  onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => void;
+  onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => (() => void);
+  onOllamaPullDone: (callback: (data: { requestId: string }) => void) => (() => void);
+  onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => (() => void);
 
   // Hyper Key
   onHyperKeyCombo: (callback: (key: string) => void) => (() => void);

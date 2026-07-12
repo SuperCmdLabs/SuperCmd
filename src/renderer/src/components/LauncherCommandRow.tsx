@@ -12,30 +12,63 @@ import {
 type LauncherCommandRowProps = {
   command: CommandInfo;
   flatIndex: number;
+  absoluteIndex: number;
   selected: boolean;
-  itemRef: (el: HTMLDivElement | null) => void;
+  registerItemRef: (absoluteIndex: number, el: HTMLDivElement | null) => void;
   commandAlias: string;
   commandHotkey: string;
-  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
-  onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onCommandClick: (
+    command: CommandInfo,
+    selectedIndex: number,
+    event?: React.MouseEvent<HTMLDivElement>
+  ) => void | Promise<void>;
+  onCommandContextMenu: (
+    event: React.MouseEvent<HTMLDivElement>,
+    command: CommandInfo,
+    selectedIndex: number
+  ) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
 
-const LauncherCommandRow: React.FC<LauncherCommandRowProps> = ({
+const LauncherCommandRowComponent: React.FC<LauncherCommandRowProps> = ({
   command,
   flatIndex,
+  absoluteIndex,
   selected,
-  itemRef,
+  registerItemRef,
   commandAlias,
   commandHotkey,
-  onClick,
-  onContextMenu,
+  onCommandClick,
+  onCommandContextMenu,
   t,
 }) => {
-  const accessoryLabel = getCommandAccessoryLabel(command);
-  const typeBadgeLabel = getCommandTypeBadgeLabel(command, t);
-  const fallbackCategory = getCategoryLabel(command.category, t);
-  const hotkeyParts = commandHotkey ? getShortcutDisplayParts(commandHotkey) : [];
+  const accessoryLabel = React.useMemo(() => getCommandAccessoryLabel(command), [command]);
+  const typeBadgeLabel = React.useMemo(() => getCommandTypeBadgeLabel(command, t), [command, t]);
+  const fallbackCategory = React.useMemo(() => getCategoryLabel(command.category, t), [command.category, t]);
+  const hotkeyParts = React.useMemo(
+    () => (commandHotkey ? getShortcutDisplayParts(commandHotkey) : []),
+    [commandHotkey]
+  );
+  const displayTitle = React.useMemo(() => getCommandDisplayTitle(command, t), [command, t]);
+  const commandIcon = React.useMemo(() => renderCommandIcon(command), [command]);
+  const itemRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      registerItemRef(absoluteIndex, el);
+    },
+    [absoluteIndex, registerItemRef]
+  );
+  const handleClick = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      void onCommandClick(command, absoluteIndex, event);
+    },
+    [absoluteIndex, command, onCommandClick]
+  );
+  const handleContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      onCommandContextMenu(event, command, absoluteIndex);
+    },
+    [absoluteIndex, command, onCommandContextMenu]
+  );
 
   return (
     <div
@@ -43,17 +76,17 @@ const LauncherCommandRow: React.FC<LauncherCommandRowProps> = ({
       className={`command-item px-3 py-2 rounded-lg cursor-pointer ${
         selected ? 'selected' : ''
       }`}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       <div className="flex items-center gap-2.5">
         <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-          {renderCommandIcon(command)}
+          {commandIcon}
         </div>
 
         <div className="min-w-0 flex-1 flex items-center gap-2">
           <div className="text-[var(--text-primary)] text-[0.8125rem] font-medium truncate tracking-[0.004em]">
-            {getCommandDisplayTitle(command, t)}
+            {displayTitle}
           </div>
           {accessoryLabel ? (
             <div className="text-[var(--text-muted)] text-[0.75rem] font-medium truncate">
@@ -94,5 +127,7 @@ const LauncherCommandRow: React.FC<LauncherCommandRowProps> = ({
     </div>
   );
 };
+
+const LauncherCommandRow = React.memo(LauncherCommandRowComponent);
 
 export default LauncherCommandRow;

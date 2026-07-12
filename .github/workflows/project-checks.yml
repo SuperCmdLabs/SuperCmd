@@ -1,0 +1,56 @@
+name: Project Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-i18n-build:
+    name: Tests, i18n, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      SUPERCMD_SKIP_ELECTRON_TESTS: '1'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies without native postinstall scripts
+        # package.json pins darwin esbuild packages for release packaging; --force lets Ubuntu install the lockfile.
+        run: npm ci --ignore-scripts --force
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check i18n
+        run: npm run check:i18n
+
+      - name: Build main process
+        run: npm run build:main
+
+      - name: Build renderer
+        run: npm run build:renderer

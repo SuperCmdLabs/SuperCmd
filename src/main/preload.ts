@@ -1108,13 +1108,19 @@ const electronAPI = {
   ollamaOpenDownload: (): Promise<boolean> =>
     ipcRenderer.invoke('ollama-open-download'),
   onOllamaPullProgress: (callback: (data: { requestId: string; status: string; digest: string; total: number; completed: number }) => void) => {
-    ipcRenderer.on('ollama-pull-progress', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ollama-pull-progress', listener);
+    return () => { ipcRenderer.removeListener('ollama-pull-progress', listener); };
   },
   onOllamaPullDone: (callback: (data: { requestId: string }) => void) => {
-    ipcRenderer.on('ollama-pull-done', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ollama-pull-done', listener);
+    return () => { ipcRenderer.removeListener('ollama-pull-done', listener); };
   },
   onOllamaPullError: (callback: (data: { requestId: string; error: string }) => void) => {
-    ipcRenderer.on('ollama-pull-error', (_event: any, data: any) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('ollama-pull-error', listener);
+    return () => { ipcRenderer.removeListener('ollama-pull-error', listener); };
   },
 
   // ─── Hyper Key ──────────────────────────────────────────────────
