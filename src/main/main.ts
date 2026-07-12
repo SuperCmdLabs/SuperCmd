@@ -3308,6 +3308,7 @@ const WINDOW_MANAGEMENT_PRESET_COMMAND_IDS = new Set<string>([
   'system-window-management-center',
   'system-window-management-center-80',
   'system-window-management-fill',
+  'system-window-management-fill-stage',
   'system-window-management-maximize-width',
   'system-window-management-maximize-height',
   'system-window-management-top-left',
@@ -3373,6 +3374,7 @@ const WINDOW_MANAGEMENT_LAYOUT_COMMAND_IDS = new Set<string>([
   'system-window-management-center',
   'system-window-management-center-80',
   'system-window-management-fill',
+  'system-window-management-fill-stage',
   'system-window-management-maximize-width',
   'system-window-management-maximize-height',
   'system-window-management-top-left',
@@ -3940,6 +3942,18 @@ function computeWindowManagementLayoutBounds(
         width: area.width,
         height: area.height,
       };
+    case 'system-window-management-fill-stage': {
+      // Maximize while leaving the Stage Manager strip visible: reuse Almost
+      // Maximize's left inset, extend top/right/bottom to the work-area edges.
+      const inset = Math.round((area.width - Math.round(area.width * 0.9)) / 2);
+      const x = area.x + inset;
+      return {
+        x,
+        y: area.y,
+        width: Math.max(1, areaRight - x),
+        height: area.height,
+      };
+    }
     case 'system-window-management-maximize-width': {
       // Span the full work-area width, keep the current vertical position/height.
       if (!windowBounds) return null;

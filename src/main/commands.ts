@@ -1394,6 +1394,12 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-window-management-fill-stage',
+      title: 'Window: Maximize (Stage Manager)',
+      keywords: ['window', 'management', 'maximize', 'fill', 'stage manager', 'stage', 'strip', 'respect'],
+      category: 'system',
+    },
+    {
       id: 'system-window-management-maximize-width',
       title: 'Window: Maximize Width',
       keywords: ['window', 'management', 'maximize', 'width', 'horizontal', 'fill', 'stretch'],

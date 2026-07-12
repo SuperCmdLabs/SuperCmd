@@ -10,6 +10,7 @@ private enum AdjustAction: String {
   case center = "center"
   case center80 = "center-80"
   case fill = "fill"
+  case fillStage = "fill-stage"
   case maximizeWidth = "maximize-width"
   case maximizeHeight = "maximize-height"
   case topLeft = "top-left"
@@ -566,6 +567,18 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
         x: area.origin.x,
         y: area.origin.y,
         width: max(minWidth, round(area.width)),
+        height: max(minHeight, round(area.height))
+      )
+    }
+  case .fillStage:
+    if let area {
+      // Maximize while leaving the Stage Manager strip visible: reuse Almost
+      // Maximize's left inset, extend top/right/bottom to the work-area edges.
+      let inset = round((area.width - round(area.width * 0.9)) / 2)
+      next = WindowFrame(
+        x: area.origin.x + inset,
+        y: area.origin.y,
+        width: max(minWidth, round(area.width - inset)),
         height: max(minHeight, round(area.height))
       )
     }

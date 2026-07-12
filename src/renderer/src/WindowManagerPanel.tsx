@@ -49,6 +49,7 @@ type PresetId =
   | 'center'
   | 'center-80'
   | 'fill'
+  | 'fill-stage'
   | 'maximize-width'
   | 'maximize-height'
   | 'auto-organize'
@@ -91,6 +92,7 @@ export const WINDOW_MANAGEMENT_PRESET_COMMANDS: WindowManagementPresetCommand[] 
   { commandId: 'system-window-management-center', presetId: 'center' },
   { commandId: 'system-window-management-center-80', presetId: 'center-80' },
   { commandId: 'system-window-management-fill', presetId: 'fill' },
+  { commandId: 'system-window-management-fill-stage', presetId: 'fill-stage' },
   { commandId: 'system-window-management-maximize-width', presetId: 'maximize-width' },
   { commandId: 'system-window-management-maximize-height', presetId: 'maximize-height' },
   { commandId: 'system-window-management-top-left', presetId: 'top-left' },
@@ -147,6 +149,7 @@ const PRESETS: Array<{ id: PresetId; label: string; subtitle: string }> = [
   { id: 'center', label: 'Center', subtitle: 'Current window' },
   { id: 'center-80', label: 'Almost Maximize', subtitle: 'Current window' },
   { id: 'fill', label: 'Maximize', subtitle: 'Current window' },
+  { id: 'fill-stage', label: 'Maximize (Stage Manager)', subtitle: 'Current window' },
   { id: 'maximize-width', label: 'Maximize Width', subtitle: 'Current window' },
   { id: 'maximize-height', label: 'Maximize Height', subtitle: 'Current window' },
   { id: 'top-left', label: 'Top Left', subtitle: 'Current window' },
@@ -308,6 +311,9 @@ function renderPresetIcon(id: PresetId): JSX.Element {
       break;
     case 'fill':
       cells.push({ x: 1, y: 1, w: 18, h: 12 });
+      break;
+    case 'fill-stage':
+      cells.push({ x: 1, y: 3, w: 2, h: 8 }, { x: 4, y: 1, w: 15, h: 12 });
       break;
     case 'maximize-width':
       cells.push({ x: 1, y: 4, w: 18, h: 6 });
@@ -1031,6 +1037,13 @@ function getPresetRegion(presetId: PresetId, area: ScreenArea): Rect | null {
   }
   if (presetId === 'fill') {
     return { x: area.left, y: area.top, width: area.width, height: area.height };
+  }
+  if (presetId === 'fill-stage') {
+    // Maximize while leaving the Stage Manager strip visible: reuse Almost
+    // Maximize's left inset (native path uses 90% width), extend the rest.
+    const inset = Math.round((area.width - Math.round(area.width * 0.9)) / 2);
+    const x = area.left + inset;
+    return { x, y: area.top, width: Math.max(1, area.left + area.width - x), height: area.height };
   }
   if (presetId === 'center') {
     const width = Math.max(1, Math.round(area.width * 0.6));
