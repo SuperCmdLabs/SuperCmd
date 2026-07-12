@@ -398,18 +398,7 @@ async function* streamGeminiChat(
     useHttps: true,
   });
 
-  yield* parseSSE(response, (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      const parts = parsed?.candidates?.[0]?.content?.parts;
-      if (Array.isArray(parts)) {
-        return parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('') || null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+  yield* streamGeminiSSE(response);
 }
 
 async function* streamOllamaChat(
@@ -608,7 +597,7 @@ async function* streamGemini(
 
   const response = await httpRequest({
     hostname: 'generativelanguage.googleapis.com',
-    path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    path: `/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -616,21 +605,54 @@ async function* streamGemini(
     useHttps: true,
   });
 
-  const parsed = JSON.parse(await readResponseBody(response) || '{}');
-  const text = Array.isArray(parsed?.candidates?.[0]?.content?.parts)
-    ? parsed.candidates[0].content.parts
-        .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
-        .join('')
-    : '';
+  yield* streamGeminiSSE(response, { throwOnNoText: true });
+}
 
-  if (text) {
-    yield text;
-    return;
+function extractGeminiResponseText(parsed: any): string {
+  const parts = parsed?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+
+  return parts
+    .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('');
+}
+
+function extractGeminiNoTextReason(parsed: any): string {
+  return String(parsed?.candidates?.[0]?.finishReason || parsed?.promptFeedback?.blockReason || '').trim();
+}
+
+function createGeminiNoTextError(reason: string): Error {
+  if (reason) return new Error(`Gemini returned no text (${reason}).`);
+  return new Error('Gemini returned no text.');
+}
+
+async function* streamGeminiSSE(
+  response: http.IncomingMessage,
+  options: { throwOnNoText?: boolean } = {}
+): AsyncGenerator<string> {
+  let yieldedText = false;
+  let noTextReason = '';
+
+  yield* parseSSE(response, (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      const text = extractGeminiResponseText(parsed);
+      if (text) {
+        yieldedText = true;
+        return text;
+      }
+
+      const reason = extractGeminiNoTextReason(parsed);
+      if (reason && !noTextReason) noTextReason = reason;
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  if (options.throwOnNoText && !yieldedText) {
+    throw createGeminiNoTextError(noTextReason);
   }
-
-  const reason = String(parsed?.candidates?.[0]?.finishReason || parsed?.promptFeedback?.blockReason || '').trim();
-  if (reason) throw new Error(`Gemini returned no text (${reason}).`);
-  throw new Error('Gemini returned no text.');
 }
 
 // ─── Ollama ──────────────────────────────────────────────────────────
@@ -727,14 +749,6 @@ function httpRequest(opts: HttpRequestOptions): Promise<http.IncomingMessage> {
   });
 }
 
-async function readResponseBody(response: http.IncomingMessage): Promise<string> {
-  let body = '';
-  for await (const rawChunk of response) {
-    body += rawChunk.toString();
-  }
-  return body;
-}
-
 async function* parseSSE(
   response: http.IncomingMessage,
   extractChunk: (data: string) => string | null
@@ -822,10 +836,17 @@ function resolveUploadMeta(mimeType?: string): { filename: string; contentType: 
   return { filename: 'audio.webm', contentType: 'audio/webm' };
 }
 
-export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
-  const boundary = `----SuperCmdBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
-  const uploadMeta = resolveUploadMeta(opts.mimeType);
+interface MultipartUpload {
+  parts: Buffer[];
+  contentLength: number;
+}
 
+function getMultipartContentLength(parts: readonly Buffer[]): number {
+  return parts.reduce((total, part) => total + part.length, 0);
+}
+
+function buildTranscriptionMultipartUpload(opts: TranscribeOptions, boundary: string): MultipartUpload {
+  const uploadMeta = resolveUploadMeta(opts.mimeType);
   const parts: Buffer[] = [];
 
   // file field
@@ -854,7 +875,22 @@ export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
 
   parts.push(Buffer.from(`--${boundary}--\r\n`));
 
-  const body = Buffer.concat(parts);
+  return {
+    parts,
+    contentLength: getMultipartContentLength(parts),
+  };
+}
+
+function writeBufferedRequestParts(req: http.ClientRequest, parts: readonly Buffer[]): void {
+  for (const part of parts) {
+    req.write(part);
+  }
+  req.end();
+}
+
+export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
+  const boundary = `----SuperCmdBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const upload = buildTranscriptionMultipartUpload(opts, boundary);
 
   return new Promise<string>((resolve, reject) => {
     const req = https.request(
@@ -865,7 +901,7 @@ export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
         headers: {
           'Authorization': `Bearer ${opts.apiKey}`,
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          'Content-Length': body.length,
+          'Content-Length': upload.contentLength,
         },
       },
       (res) => {
@@ -895,7 +931,6 @@ export function transcribeAudio(opts: TranscribeOptions): Promise<string> {
       }, { once: true });
     }
 
-    req.write(body);
-    req.end();
+    writeBufferedRequestParts(req, upload.parts);
   });
 }
