@@ -57,6 +57,8 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024; // 2MB
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 let cache: { fetchedAt: number; commands: ScriptCommandInfo[] } | null = null;
+const iconDataUrlCache = new Map<string, { signature: string; dataUrl?: string }>();
+const MAX_ICON_DATA_URL_CACHE_ENTRIES = 512;
 
 function getSuperCmdScriptsDir(): string {
   const dir = path.join(app.getPath('userData'), 'script-commands');
@@ -125,6 +127,42 @@ function fileToDataUrl(filePath: string): string | undefined {
   }
 }
 
+function getIconFileSignature(iconPath: string): string | null {
+  try {
+    const stat = fs.statSync(iconPath);
+    if (!stat.isFile()) return null;
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
+function getCachedIconDataUrl(iconPath: string): string | undefined {
+  const signature = getIconFileSignature(iconPath);
+  if (!signature) {
+    iconDataUrlCache.delete(iconPath);
+    return undefined;
+  }
+
+  const cached = iconDataUrlCache.get(iconPath);
+  if (cached && cached.signature === signature) {
+    return cached.dataUrl;
+  }
+
+  const dataUrl = fileToDataUrl(iconPath);
+  if (!dataUrl) {
+    iconDataUrlCache.delete(iconPath);
+    return undefined;
+  }
+
+  if (!iconDataUrlCache.has(iconPath) && iconDataUrlCache.size >= MAX_ICON_DATA_URL_CACHE_ENTRIES) {
+    const oldestKey = iconDataUrlCache.keys().next().value;
+    if (oldestKey) iconDataUrlCache.delete(oldestKey);
+  }
+  iconDataUrlCache.set(iconPath, { signature, dataUrl });
+  return dataUrl;
+}
+
 function resolveIcon(
   rawIcon: string,
   scriptDir: string
@@ -144,9 +182,8 @@ function resolveIcon(
   const iconPath = path.isAbsolute(expanded)
     ? expanded
     : path.resolve(scriptDir, expanded);
-  if (!fs.existsSync(iconPath)) return {};
 
-  const dataUrl = fileToDataUrl(iconPath);
+  const dataUrl = getCachedIconDataUrl(iconPath);
   if (dataUrl) return { iconDataUrl: dataUrl };
   return {};
 }

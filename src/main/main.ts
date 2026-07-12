@@ -19,7 +19,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { fork, execFileSync, type ChildProcess } from 'child_process';
 import { getNativeBinaryPath, resolvePackagedUnpackedPath } from './native-binary';
-import { getAvailableCommands, executeCommand, invalidateCache, initCommandsCache, getInflightDiscovery, refreshCommandsNow } from './commands';
+import {
+  getAvailableCommands,
+  executeCommand,
+  invalidateCache,
+  initCommandsCache,
+  getInflightDiscovery,
+  refreshCommandsNow,
+  applyCommandMetadataUpdate,
+  applyCommandMetadataUpdateWithCacheFallback,
+} from './commands';
 import {
   loadSettings,
   saveSettings,
@@ -15143,7 +15152,7 @@ app.whenReady().then(async () => {
             delete metadata[executed.commandId];
           }
           saveSettings({ commandMetadata: metadata });
-          invalidateCache();
+          applyCommandMetadataUpdate(executed.commandId, { subtitle: subtitle || null });
         }
 
         if (!background && (executed.mode === 'compact' || executed.mode === 'silent')) {
@@ -15237,8 +15246,12 @@ app.whenReady().then(async () => {
 
         saveSettings({ commandMetadata: settings.commandMetadata });
 
-        // Notify all windows to refresh command list
-        invalidateCache();
+        // Patch the live command list when present; otherwise invalidate so the
+        // next command fetch re-applies the persisted metadata after discovery.
+        const patchResult = applyCommandMetadataUpdateWithCacheFallback(commandId, metadata);
+        if (patchResult.changedCommands > 0) {
+          broadcastCommandsUpdated();
+        }
         return { success: true };
       } catch (e: any) {
         console.error('update-command-metadata error:', e);

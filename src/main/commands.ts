@@ -112,6 +112,21 @@ let inflightDiscovery: Promise<CommandInfo[]> | null = null;
 let lastStaleRefreshRequestAt = 0;
 const CACHE_TTL = 30 * 60_000; // 30 min
 const STALE_REFRESH_COOLDOWN_MS = 15_000;
+let commandDiscoveryStartCount = 0;
+let commandDiscoveryRunnerForTesting: (() => Promise<CommandInfo[]>) | null = null;
+
+export type CommandRuntimeMetadata = { subtitle?: string | null | undefined };
+type CommandRuntimeMetadataStore = Record<string, CommandRuntimeMetadata | undefined>;
+
+export interface CommandMetadataPatchResult {
+  matchedCommands: number;
+  changedCommands: number;
+  patchedCachedCommands: boolean;
+  patchedStaleCommandsFallback: boolean;
+}
+
+const runtimeMetadataBaseSubtitleByKey = new Map<string, string | undefined>();
+const runtimeMetadataCommandsByKey = new Map<string, Set<CommandInfo>>();
 
 // ─── Commands Disk Cache ─────────────────────────────────────────────────────
 // Persists the discovered commands list across restarts so the launcher is
@@ -151,7 +166,18 @@ function loadCommandsDiskCache(): CommandInfo[] | null {
 function saveCommandsDiskCache(commands: CommandInfo[]): void {
   try {
     // Strip icon data — icons are persisted separately in icon-cache/.
-    const stripped = commands.map(({ iconDataUrl: _drop, ...rest }) => rest);
+    const stripped = commands.map(({ iconDataUrl: _drop, ...rest }) => {
+      const commandForDisk = { ...rest };
+      const baseSubtitle = getRuntimeMetadataBaseSubtitle(commandForDisk);
+      if (baseSubtitle.known) {
+        if (baseSubtitle.subtitle) {
+          commandForDisk.subtitle = baseSubtitle.subtitle;
+        } else {
+          delete commandForDisk.subtitle;
+        }
+      }
+      return commandForDisk;
+    });
     fs.writeFileSync(
       getCommandsDiskCachePath(),
       JSON.stringify({ version: COMMANDS_DISK_CACHE_VERSION, commands: stripped }),
@@ -166,6 +192,11 @@ function saveCommandsDiskCache(commands: CommandInfo[]): void {
 export function initCommandsCache(): void {
   const cmds = loadCommandsDiskCache();
   if (cmds) {
+    resetRuntimeMetadataTracking();
+    rememberRuntimeMetadataBaseSubtitles(cmds);
+    try {
+      applyStoredRuntimeCommandMetadata(cmds, loadSettings().commandMetadata || {});
+    } catch {}
     cachedCommands = cmds;
     staleCommandsFallback = cmds;
     cacheTimestamp = 0; // mark stale so the next getAvailableCommands() triggers a background refresh
@@ -176,6 +207,218 @@ export function initCommandsCache(): void {
 /** Returns the current inflight background discovery promise, if any. */
 export function getInflightDiscovery(): Promise<CommandInfo[]> | null {
   return inflightDiscovery;
+}
+
+function normalizeCommandMetadataKey(value: string): string {
+  return String(value || '').trim();
+}
+
+function normalizeRuntimeSubtitle(value: string | null | undefined): string {
+  return String(value ?? '').trim();
+}
+
+function isRuntimeMetadataSubtitleEligible(command: CommandInfo): boolean {
+  return !(command.category === 'script' && command.mode !== 'inline');
+}
+
+function getRuntimeMetadataKeys(command: CommandInfo): string[] {
+  const keys = [normalizeCommandMetadataKey(command.id)];
+  if (command.category === 'extension') {
+    keys.push(normalizeCommandMetadataKey(command.path || ''));
+  }
+  return Array.from(new Set(keys.filter(Boolean)));
+}
+
+function commandMatchesRuntimeMetadataKey(command: CommandInfo, key: string): boolean {
+  const normalizedKey = normalizeCommandMetadataKey(key);
+  if (!normalizedKey) return false;
+  return getRuntimeMetadataKeys(command).includes(normalizedKey);
+}
+
+function resetRuntimeMetadataTracking(): void {
+  runtimeMetadataBaseSubtitleByKey.clear();
+  runtimeMetadataCommandsByKey.clear();
+}
+
+function rememberRuntimeMetadataBaseSubtitles(commands: CommandInfo[]): void {
+  for (const command of commands) {
+    if (!isRuntimeMetadataSubtitleEligible(command)) continue;
+    for (const key of getRuntimeMetadataKeys(command)) {
+      runtimeMetadataBaseSubtitleByKey.set(key, command.subtitle);
+      let commandsForKey = runtimeMetadataCommandsByKey.get(key);
+      if (!commandsForKey) {
+        commandsForKey = new Set();
+        runtimeMetadataCommandsByKey.set(key, commandsForKey);
+      }
+      commandsForKey.add(command);
+    }
+  }
+}
+
+function ensureRuntimeMetadataBaseSubtitle(command: CommandInfo): void {
+  if (!isRuntimeMetadataSubtitleEligible(command)) return;
+  for (const key of getRuntimeMetadataKeys(command)) {
+    if (!runtimeMetadataBaseSubtitleByKey.has(key)) {
+      runtimeMetadataBaseSubtitleByKey.set(key, command.subtitle);
+    }
+  }
+}
+
+function getRuntimeMetadataBaseSubtitle(command: CommandInfo): { known: boolean; subtitle?: string } {
+  if (!isRuntimeMetadataSubtitleEligible(command)) return { known: false };
+  for (const key of getRuntimeMetadataKeys(command)) {
+    if (runtimeMetadataBaseSubtitleByKey.has(key)) {
+      return { known: true, subtitle: runtimeMetadataBaseSubtitleByKey.get(key) };
+    }
+  }
+  return { known: false };
+}
+
+function getStoredRuntimeSubtitle(
+  command: CommandInfo,
+  commandMetadata: CommandRuntimeMetadataStore
+): string {
+  if (!isRuntimeMetadataSubtitleEligible(command)) return '';
+  for (const key of getRuntimeMetadataKeys(command)) {
+    const subtitle = normalizeRuntimeSubtitle(commandMetadata[key]?.subtitle);
+    if (subtitle) return subtitle;
+  }
+  return '';
+}
+
+function setRuntimeMetadataSubtitle(command: CommandInfo, subtitle: string): boolean {
+  ensureRuntimeMetadataBaseSubtitle(command);
+  const previousSubtitle = command.subtitle;
+  if (subtitle) {
+    command.subtitle = subtitle;
+  } else {
+    const baseSubtitle = getRuntimeMetadataBaseSubtitle(command);
+    if (baseSubtitle.known && baseSubtitle.subtitle) {
+      command.subtitle = baseSubtitle.subtitle;
+    } else {
+      delete command.subtitle;
+    }
+  }
+  return command.subtitle !== previousSubtitle;
+}
+
+function applyStoredRuntimeCommandMetadata(
+  commands: CommandInfo[],
+  commandMetadata: CommandRuntimeMetadataStore
+): void {
+  for (const command of commands) {
+    const subtitle = getStoredRuntimeSubtitle(command, commandMetadata);
+    if (subtitle) {
+      setRuntimeMetadataSubtitle(command, subtitle);
+    }
+  }
+}
+
+function startCommandDiscovery(): Promise<CommandInfo[]> {
+  commandDiscoveryStartCount += 1;
+  return (commandDiscoveryRunnerForTesting || discoverAndBuildCommands)();
+}
+
+export function applyCommandMetadataUpdate(
+  commandId: string,
+  metadata: CommandRuntimeMetadata
+): CommandMetadataPatchResult {
+  const normalizedCommandId = normalizeCommandMetadataKey(commandId);
+  if (!normalizedCommandId) {
+    return {
+      matchedCommands: 0,
+      changedCommands: 0,
+      patchedCachedCommands: false,
+      patchedStaleCommandsFallback: false,
+    };
+  }
+
+  const subtitle = normalizeRuntimeSubtitle(metadata?.subtitle);
+  const matchedCommandIds = new Set<string>();
+  const changedCommandIds = new Set<string>();
+  let patchedCachedCommands = false;
+  let patchedStaleCommandsFallback = false;
+
+  const registeredCommands = runtimeMetadataCommandsByKey.get(normalizedCommandId);
+  const commandsToPatch = registeredCommands
+    ? Array.from(registeredCommands)
+    : [
+        ...(cachedCommands || []),
+        ...((staleCommandsFallback && staleCommandsFallback !== cachedCommands) ? staleCommandsFallback : []),
+      ].filter((command) => commandMatchesRuntimeMetadataKey(command, normalizedCommandId));
+
+  for (const command of commandsToPatch) {
+    if (!isRuntimeMetadataSubtitleEligible(command)) continue;
+    if (!commandMatchesRuntimeMetadataKey(command, normalizedCommandId)) continue;
+    matchedCommandIds.add(command.id);
+    if (setRuntimeMetadataSubtitle(command, subtitle)) {
+      changedCommandIds.add(command.id);
+      if (cachedCommands?.includes(command)) {
+        patchedCachedCommands = true;
+      }
+      if (staleCommandsFallback && staleCommandsFallback !== cachedCommands && staleCommandsFallback.includes(command)) {
+        patchedStaleCommandsFallback = true;
+      }
+    }
+  }
+
+  return {
+    matchedCommands: matchedCommandIds.size,
+    changedCommands: changedCommandIds.size,
+    patchedCachedCommands,
+    patchedStaleCommandsFallback,
+  };
+}
+
+export function applyCommandMetadataUpdateWithCacheFallback(
+  commandId: string,
+  metadata: CommandRuntimeMetadata
+): CommandMetadataPatchResult {
+  const patchResult = applyCommandMetadataUpdate(commandId, metadata);
+  if (patchResult.matchedCommands === 0) {
+    invalidateCache();
+  }
+  return patchResult;
+}
+
+export function __seedCommandCacheForTesting(
+  commands: CommandInfo[],
+  options: { cacheTimestamp?: number; staleCommandsFallback?: CommandInfo[] | null } = {}
+): void {
+  cachedCommands = commands;
+  staleCommandsFallback = options.staleCommandsFallback === undefined
+    ? commands
+    : options.staleCommandsFallback;
+  cacheTimestamp = options.cacheTimestamp ?? Date.now();
+  inflightDiscovery = null;
+  lastStaleRefreshRequestAt = 0;
+  resetRuntimeMetadataTracking();
+  rememberRuntimeMetadataBaseSubtitles(commands);
+  if (staleCommandsFallback && staleCommandsFallback !== commands) {
+    rememberRuntimeMetadataBaseSubtitles(staleCommandsFallback);
+  }
+}
+
+export function __resetCommandCacheForTesting(): void {
+  cachedCommands = null;
+  staleCommandsFallback = null;
+  cacheTimestamp = 0;
+  inflightDiscovery = null;
+  lastStaleRefreshRequestAt = 0;
+  commandDiscoveryStartCount = 0;
+  commandDiscoveryRunnerForTesting = null;
+  resetRuntimeMetadataTracking();
+  commandsDiskCachePath = null;
+}
+
+export function __setCommandDiscoveryRunnerForTesting(
+  runner: (() => Promise<CommandInfo[]>) | null
+): void {
+  commandDiscoveryRunnerForTesting = runner;
+}
+
+export function __getCommandDiscoveryStartCountForTesting(): number {
+  return commandDiscoveryStartCount;
 }
 
 // ─── Icon Disk Cache ────────────────────────────────────────────────
@@ -1989,13 +2232,10 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
     const loadedSettings = loadSettings();
     const commandMetadata = loadedSettings.commandMetadata || {};
     const commandAliases = loadedSettings.commandAliases || {};
+    resetRuntimeMetadataTracking();
+    rememberRuntimeMetadataBaseSubtitles(allCommands);
+    applyStoredRuntimeCommandMetadata(allCommands, commandMetadata);
     for (const cmd of allCommands) {
-      if (!(cmd.category === 'script' && cmd.mode !== 'inline')) {
-        const subtitle = String(commandMetadata[cmd.id]?.subtitle || '').trim();
-        if (subtitle) {
-          cmd.subtitle = subtitle;
-        }
-      }
       const alias = String(commandAliases[cmd.id] || '').trim();
       if (alias) {
         cmd.keywords = Array.from(new Set([...(cmd.keywords || []), alias]));
@@ -2023,7 +2263,7 @@ function ensureBackgroundRefreshForStaleCache(): void {
   const now = Date.now();
   if (now - lastStaleRefreshRequestAt < STALE_REFRESH_COOLDOWN_MS) return;
   lastStaleRefreshRequestAt = now;
-  inflightDiscovery = discoverAndBuildCommands()
+  inflightDiscovery = startCommandDiscovery()
     .catch((error) => {
       console.warn('[Commands] Background refresh failed:', error);
       return cachedCommands || [];
@@ -2038,7 +2278,7 @@ export async function refreshCommandsNow(): Promise<CommandInfo[]> {
     return inflightDiscovery;
   }
 
-  inflightDiscovery = discoverAndBuildCommands().finally(() => {
+  inflightDiscovery = startCommandDiscovery().finally(() => {
     inflightDiscovery = null;
   });
   return inflightDiscovery;
@@ -2062,7 +2302,7 @@ export async function getAvailableCommands(): Promise<CommandInfo[]> {
   // so the launcher never blocks on discovery after an invalidation event.
   if (staleCommandsFallback) {
     if (!inflightDiscovery) {
-      inflightDiscovery = discoverAndBuildCommands()
+      inflightDiscovery = startCommandDiscovery()
         .catch((error) => {
           console.warn('[Commands] Background refresh failed:', error);
           return staleCommandsFallback || [];

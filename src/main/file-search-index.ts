@@ -796,28 +796,97 @@ async function applyWatchEventBatch(paths: string[]): Promise<void> {
   }
 }
 
-function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
-  const directIds = new Set<number>();
-  for (const deletedPath of deletePaths) {
-    const id = snapshot.pathToEntryId.get(deletedPath);
-    if (id !== undefined) directIds.add(id);
+function hasDeletedPathAncestor(candidatePath: string, deletedPathSet: Set<string>): boolean {
+  let currentPath = path.dirname(candidatePath);
+  while (currentPath && currentPath !== candidatePath) {
+    if (deletedPathSet.has(currentPath)) return true;
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) break;
+    currentPath = parentPath;
   }
-  const prefixes = deletePaths.map((p) => p + path.sep);
+  return false;
+}
 
-  for (let i = 0; i < snapshot.entries.length; i += 1) {
-    const entry = snapshot.entries[i];
-    if (entry.deleted) continue;
-    if (directIds.has(i)) {
-      entry.deleted = true;
+function normalizeDeletedPath(candidatePath: string): string | null {
+  const rawPath = String(candidatePath || '');
+  if (!rawPath) return null;
+  return path.resolve(rawPath);
+}
+
+function collapseNestedDeletedPaths(deletePaths: string[]): string[] {
+  const uniquePaths = new Set<string>();
+  for (const deletePath of deletePaths) {
+    const normalizedPath = normalizeDeletedPath(deletePath);
+    if (normalizedPath) uniquePaths.add(normalizedPath);
+  }
+
+  const sortedPaths = [...uniquePaths].sort((a, b) => {
+    if (a.length !== b.length) return a.length - b.length;
+    return a.localeCompare(b);
+  });
+  const collapsedPaths: string[] = [];
+  const collapsedPathSet = new Set<string>();
+
+  for (const deletePath of sortedPaths) {
+    if (hasDeletedPathAncestor(deletePath, collapsedPathSet)) {
       continue;
     }
-    for (const prefix of prefixes) {
-      if (entry.path.startsWith(prefix)) {
+    collapsedPaths.push(deletePath);
+    collapsedPathSet.add(deletePath);
+  }
+
+  return collapsedPaths;
+}
+
+function getDescendantPathPrefix(rootPath: string): string {
+  return rootPath.endsWith(path.sep) ? rootPath : `${rootPath}${path.sep}`;
+}
+
+function markDescendantEntriesDeleted(snapshot: IndexSnapshot, deletedRootPaths: string[]): void {
+  if (deletedRootPaths.length === 0) return;
+
+  if (deletedRootPaths.length === 1) {
+    const descendantPrefix = getDescendantPathPrefix(deletedRootPaths[0]);
+    for (const entry of snapshot.entries) {
+      if (entry.deleted) continue;
+      if (entry.path.startsWith(descendantPrefix)) {
         entry.deleted = true;
-        break;
       }
     }
+    return;
   }
+
+  const deletedPathSet = new Set(deletedRootPaths);
+  for (const entry of snapshot.entries) {
+    if (entry.deleted) continue;
+    if (hasDeletedPathAncestor(entry.path, deletedPathSet)) {
+      entry.deleted = true;
+    }
+  }
+}
+
+function tombstoneDeletedPaths(snapshot: IndexSnapshot, deletePaths: string[]): void {
+  const collapsedDeletePaths = collapseNestedDeletedPaths(deletePaths);
+  if (collapsedDeletePaths.length === 0) return;
+
+  const deletedRootPaths: string[] = [];
+  for (const deletedPath of collapsedDeletePaths) {
+    const id = snapshot.pathToEntryId.get(deletedPath);
+    if (id === undefined) {
+      deletedRootPaths.push(deletedPath);
+      continue;
+    }
+
+    const entry = snapshot.entries[id];
+    if (entry && !entry.deleted) {
+      entry.deleted = true;
+    }
+    if (entry?.isDirectory) {
+      deletedRootPaths.push(deletedPath);
+    }
+  }
+
+  markDescendantEntriesDeleted(snapshot, deletedRootPaths);
 }
 
 async function walkAddedDirectory(snapshot: IndexSnapshot, dirPath: string): Promise<void> {
