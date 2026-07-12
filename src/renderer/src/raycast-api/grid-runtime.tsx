@@ -10,6 +10,14 @@ import type { ExtractedAction } from './action-runtime';
 import { transliterateForSearch } from '../utils/transliterate';
 import { createGridItemsRuntime } from './grid-runtime-items';
 import { groupGridItems, useGridRegistry } from './grid-runtime-hooks';
+import {
+  GRID_DEFAULT_COLUMNS,
+  buildVirtualGridLayout,
+  getColumnsForItemIndex,
+  getScrollTopForItemIndex,
+  getVisibleVirtualRows,
+  normalizeGridColumns,
+} from './grid-runtime-virtualization';
 import { useI18n } from '../i18n';
 
 interface GridRuntimeDeps {
@@ -53,6 +61,10 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
   function GridComponent({
     children,
     columns,
+    itemSize,
+    aspectRatio,
+    fit,
+    inset,
     isLoading,
     searchBarPlaceholder,
     onSearchTextChange,
@@ -73,8 +85,36 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     const gridRef = useRef<HTMLDivElement>(null);
     const { pop } = useNavigation();
 
-    const cols = columns || 5;
+    const rootColumns = useMemo(() => normalizeGridColumns(columns, GRID_DEFAULT_COLUMNS, itemSize), [columns, itemSize]);
+    const [gridViewport, setGridViewport] = useState({ scrollTop: 0, viewportHeight: 0, containerWidth: 0 });
     const { registryAPI, allItems } = useGridRegistry();
+
+    const measureGridViewport = useCallback(() => {
+      const node = gridRef.current;
+      if (!node) return;
+
+      const nextViewport = {
+        scrollTop: node.scrollTop,
+        viewportHeight: node.clientHeight,
+        containerWidth: Math.max(0, node.clientWidth - 16),
+      };
+
+      setGridViewport((current) => (
+        Math.abs(current.scrollTop - nextViewport.scrollTop) < 1
+        && current.viewportHeight === nextViewport.viewportHeight
+        && current.containerWidth === nextViewport.containerWidth
+          ? current
+          : nextViewport
+      ));
+    }, []);
+
+    const handleGridScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+      const node = event.currentTarget;
+      setGridViewport((current) => {
+        if (Math.abs(current.scrollTop - node.scrollTop) < 1) return current;
+        return { ...current, scrollTop: node.scrollTop };
+      });
+    }, []);
 
     useEffect(() => {
       if (controlledSearch === undefined) return;
@@ -108,6 +148,26 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
         return false;
       });
     }, [allItems, filtering, internalSearch, onSearchTextChange]);
+
+    const groupedItems = useMemo(() => groupGridItems(filteredItems), [filteredItems]);
+    const virtualLayout = useMemo(
+      () => buildVirtualGridLayout(groupedItems, {
+        defaultColumns: rootColumns,
+        itemSize,
+        defaultAspectRatio: aspectRatio,
+        defaultFit: fit,
+        defaultInset: inset,
+        containerWidth: gridViewport.containerWidth,
+      }),
+      [aspectRatio, fit, gridViewport.containerWidth, groupedItems, inset, itemSize, rootColumns],
+    );
+    const visibleRows = useMemo(
+      () => getVisibleVirtualRows(virtualLayout.rows, {
+        scrollTop: gridViewport.scrollTop,
+        viewportHeight: gridViewport.viewportHeight,
+      }),
+      [gridViewport.scrollTop, gridViewport.viewportHeight, virtualLayout.rows],
+    );
 
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleSearchChange = useCallback(
@@ -171,14 +231,16 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
 
         if (event.key === 'ArrowRight') setSelectedIdx((value) => Math.min(value + 1, filteredItems.length - 1));
         else if (event.key === 'ArrowLeft') setSelectedIdx((value) => Math.max(value - 1, 0));
-        else if (event.key === 'ArrowDown') setSelectedIdx((value) => Math.min(value + cols, filteredItems.length - 1));
-        else if (event.key === 'ArrowUp') setSelectedIdx((value) => Math.max(value - cols, 0));
-        else if (event.key === 'Enter' && !event.repeat) primaryAction?.execute();
+        else if (event.key === 'ArrowDown') {
+          setSelectedIdx((value) => Math.min(value + getColumnsForItemIndex(virtualLayout, value, rootColumns), filteredItems.length - 1));
+        } else if (event.key === 'ArrowUp') {
+          setSelectedIdx((value) => Math.max(value - getColumnsForItemIndex(virtualLayout, value, rootColumns), 0));
+        } else if (event.key === 'Enter' && !event.repeat) primaryAction?.execute();
         else return;
 
         event.preventDefault();
       },
-      [cols, filteredItems.length, isMetaK, matchesShortcut, primaryAction, selectedActions, showActions],
+      [filteredItems.length, isMetaK, matchesShortcut, primaryAction, rootColumns, selectedActions, showActions, virtualLayout],
     );
 
     useEffect(() => {
@@ -192,20 +254,42 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     }, [filteredItems.length, selectedIdx]);
 
     useEffect(() => {
-      gridRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, [selectedIdx]);
+      const node = gridRef.current;
+      if (!node || filteredItems.length === 0) return;
+
+      const nextScrollTop = getScrollTopForItemIndex(virtualLayout, selectedIdx, {
+        currentScrollTop: node.scrollTop,
+        viewportHeight: node.clientHeight || gridViewport.viewportHeight,
+      });
+      if (Math.abs(nextScrollTop - node.scrollTop) < 1) return;
+
+      node.scrollTo({ top: nextScrollTop, behavior: 'smooth' });
+      requestAnimationFrame(measureGridViewport);
+    }, [filteredItems.length, gridViewport.viewportHeight, measureGridViewport, selectedIdx, virtualLayout]);
 
     useEffect(() => {
       inputRef.current?.focus();
     }, []);
 
     useEffect(() => {
+      measureGridViewport();
+      const node = gridRef.current;
+      if (!node) return;
+
+      const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureGridViewport) : null;
+      resizeObserver?.observe(node);
+      window.addEventListener('resize', measureGridViewport);
+      return () => {
+        resizeObserver?.disconnect();
+        window.removeEventListener('resize', measureGridViewport);
+      };
+    }, [measureGridViewport]);
+
+    useEffect(() => {
       if (onSelectionChange && filteredItems[selectedIdx]) {
         onSelectionChange(filteredItems[selectedIdx]?.props?.id || null);
       }
     }, [filteredItems, onSelectionChange, selectedIdx]);
-
-    const groupedItems = useMemo(() => groupGridItems(filteredItems), [filteredItems]);
 
     return (
       <GridRegistryContext.Provider value={registryAPI}>
@@ -229,40 +313,64 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
             {searchBarAccessory && <div className="flex-shrink-0">{searchBarAccessory}</div>}
           </div>
 
-          <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
+          <div ref={gridRef} className="flex-1 overflow-y-auto p-2" onScroll={handleGridScroll}>
             {isLoading && filteredItems.length === 0 ? (
               <div className="flex items-center justify-center h-full text-[var(--text-muted)]"><p className="text-sm">{t('common.loading')}</p></div>
             ) : filteredItems.length === 0 ? (
               emptyViewProps ? <ListEmptyView title={emptyViewProps.title} description={emptyViewProps.description} icon={emptyViewProps.icon} actions={emptyViewProps.actions} /> : <div className="flex items-center justify-center h-full text-[var(--text-subtle)]"><p className="text-sm">{t('common.noResults')}</p></div>
             ) : (
-              groupedItems.map((group, groupIndex) => (
-                <div key={groupIndex} className="mb-2">
-                  {group.title && <div className="px-2 pt-2 pb-1.5 text-[11px] uppercase tracking-wider text-[var(--text-subtle)] font-medium select-none">{group.title}</div>}
-                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                    {group.items.map(({ item, globalIdx }) => (
-                      <GridItemRenderer
-                        key={item.id}
-                        title={item.props.title}
-                        subtitle={item.props.subtitle}
-                        content={item.props.content}
-                        isSelected={globalIdx === selectedIdx}
-                        dataIdx={globalIdx}
-                        onSelect={() => setSelectedIdx(globalIdx)}
-                        onActivate={() => {
-                          setSelectedIdx(globalIdx);
-                          inputRef.current?.focus();
-                        }}
-                        onContextAction={(event: React.MouseEvent<HTMLDivElement>) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setSelectedIdx(globalIdx);
-                          setShowActions(true);
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))
+              <div className="relative" style={{ height: `${virtualLayout.totalHeight}px` }}>
+                {visibleRows.map((row) => (
+                  row.kind === 'section' ? (
+                    <div
+                      key={row.key}
+                      className="absolute left-0 right-0 px-2 pt-2 pb-1.5 text-[11px] uppercase tracking-wider text-[var(--text-subtle)] font-medium select-none"
+                      style={{ top: `${row.top}px`, height: `${row.height}px` }}
+                    >
+                      <span>{row.title}</span>
+                      {row.subtitle && (
+                        <span className="ml-2 normal-case tracking-normal text-[var(--text-muted)]">{row.subtitle}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      key={row.key}
+                      className="absolute left-0 right-0 grid gap-2"
+                      style={{
+                        top: `${row.top}px`,
+                        height: `${row.height}px`,
+                        gridTemplateColumns: `repeat(${row.layout.columns}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {row.items.map(({ item, globalIdx }) => (
+                        <GridItemRenderer
+                          key={item.id}
+                          title={item.props.title}
+                          subtitle={item.props.subtitle}
+                          content={item.props.content}
+                          accessory={item.props.accessory}
+                          isSelected={globalIdx === selectedIdx}
+                          dataIdx={globalIdx}
+                          itemHeight={row.itemHeight}
+                          fit={row.layout.fit}
+                          inset={row.layout.inset}
+                          onSelect={() => setSelectedIdx(globalIdx)}
+                          onActivate={() => {
+                            setSelectedIdx(globalIdx);
+                            inputRef.current?.focus();
+                          }}
+                          onContextAction={(event: React.MouseEvent<HTMLDivElement>) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setSelectedIdx(globalIdx);
+                            setShowActions(true);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )
+                ))}
+              </div>
             )}
           </div>
 
@@ -300,7 +408,7 @@ export function createGridRuntime(deps: GridRuntimeDeps) {
     );
   }
 
-  const GridInset = { Small: 'small', Medium: 'medium', Large: 'large' } as const;
+  const GridInset = { Zero: 'zero', Small: 'sm', Medium: 'md', Large: 'lg' } as const;
   const GridItemSize = { Small: 'small', Medium: 'medium', Large: 'large' } as const;
   const GridFit = { Contain: 'contain', Fill: 'fill' } as const;
 

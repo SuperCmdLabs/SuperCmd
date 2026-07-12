@@ -34,6 +34,17 @@ public struct AXCaretRect {
   public let tier: String
 }
 
+public struct AXCaretApplicationContext {
+  public let pid: pid_t
+  public let bundleIdentifier: String
+}
+
+public struct AXCaretSessionSnapshot {
+  public let context: AXCaretApplicationContext
+  public let focusedElement: AXUIElement?
+  public let caret: AXCaretRect
+}
+
 /// Three-way result so callers can distinguish the security-sensitive case
 /// from an ordinary AX gap.  A plain `AXCaretRect?` cannot express this:
 /// both "secure field" and "no rect available" would be nil, and the caller
@@ -48,6 +59,12 @@ public enum AXCaretResult {
   /// Focused element exists but no rect could be determined (AX gap).
   /// The caller may show the picker at an approximate position (e.g. mouse).
   case noRect
+}
+
+public enum AXCaretSessionResult {
+  case secureField
+  case snapshot(AXCaretSessionSnapshot)
+  case noRect(AXCaretApplicationContext?)
 }
 
 public enum AXCaretQuery {
@@ -66,11 +83,28 @@ public enum AXCaretQuery {
 
   /// Query the caret state for the frontmost app's focused text element.
   public static func current() -> AXCaretResult {
-    guard let frontApp = NSWorkspace.shared.frontmostApplication else {
-      dbg("no frontmost app")
+    switch currentSession() {
+    case .secureField:
+      return .secureField
+    case .snapshot(let snapshot):
+      return .rect(snapshot.caret)
+    case .noRect:
       return .noRect
     }
+  }
+
+  /// Query the caret state and return the process/focused element needed to
+  /// safely cache an active emoji search session.
+  public static func currentSession() -> AXCaretSessionResult {
+    guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+      dbg("no frontmost app")
+      return .noRect(nil)
+    }
     let pid = frontApp.processIdentifier
+    let context = AXCaretApplicationContext(
+      pid: pid,
+      bundleIdentifier: frontApp.bundleIdentifier ?? ""
+    )
     let appElement = AXUIElementCreateApplication(pid)
 
     let justNudged = nudgeChromiumAX(appElement: appElement, pid: pid)
@@ -93,9 +127,9 @@ public enum AXCaretQuery {
     }
     guard focusErr == .success, let focused = focusedRaw else {
       dbg("kAXFocusedUIElementAttribute failed: err=\(focusErr.rawValue)")
-      return .noRect
+      return .noRect(context)
     }
-    guard CFGetTypeID(focused) == AXUIElementGetTypeID() else { return .noRect }
+    guard CFGetTypeID(focused) == AXUIElementGetTypeID() else { return .noRect(context) }
     var element = focused as! AXUIElement
 
     let role = copyString(element, kAXRoleAttribute as CFString) ?? ""
@@ -121,15 +155,27 @@ public enum AXCaretQuery {
     }
 
     if let r = caretRectViaTextMarker(element: element), isPlausible(r) {
-      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "textMarker"))
+      return .snapshot(AXCaretSessionSnapshot(
+        context: context,
+        focusedElement: element,
+        caret: AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "textMarker")
+      ))
     }
     if let r = caretRectViaRange(element: element), isPlausible(r) {
-      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "boundsForRange"))
+      return .snapshot(AXCaretSessionSnapshot(
+        context: context,
+        focusedElement: element,
+        caret: AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "boundsForRange")
+      ))
     }
     if let r = caretRectViaElementFrame(element: element) {
-      return .rect(AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "elementFrame"))
+      return .snapshot(AXCaretSessionSnapshot(
+        context: context,
+        focusedElement: element,
+        caret: AXCaretRect(x: r.x, y: r.y, w: r.w, h: r.h, tier: "elementFrame")
+      ))
     }
-    return .noRect
+    return .noRect(context)
   }
 
   // MARK: - Descend focus tree to find the true text leaf

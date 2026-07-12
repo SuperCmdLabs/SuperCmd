@@ -7,6 +7,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GridItemRegistration, GridRegistryAPI } from './grid-runtime-items';
 
+export interface GridItemGroup {
+  key: string;
+  title?: string;
+  subtitle?: string;
+  section?: GridItemRegistration['section'];
+  items: { item: GridItemRegistration; globalIdx: number }[];
+}
+
 export function useGridRegistry() {
   const registryRef = useRef(new Map<string, GridItemRegistration>());
   const [registryVersion, setRegistryVersion] = useState(0);
@@ -22,7 +30,8 @@ export function useGridRegistry() {
         .map((entry) => {
           const actionType = entry.props.actions?.type as any;
           const actionName = actionType?.name || actionType?.displayName || typeof actionType || '';
-          return `${entry.id}:${entry.props.title || ''}:${entry.sectionTitle || ''}:${actionName}`;
+          const section = entry.section;
+          return `${entry.id}:${entry.props.title || ''}:${section?.id || ''}:${section?.title || ''}:${section?.columns || ''}:${section?.aspectRatio || ''}:${section?.fit || ''}:${section?.inset || ''}:${actionName}`;
         })
         .join('|');
       if (snapshot !== lastSnapshotRef.current) {
@@ -38,7 +47,7 @@ export function useGridRegistry() {
         const existing = registryRef.current.get(id);
         if (existing) {
           existing.props = data.props;
-          existing.sectionTitle = data.sectionTitle;
+          existing.section = data.section;
           existing.order = data.order;
         } else {
           registryRef.current.set(id, { id, ...data });
@@ -63,14 +72,22 @@ export function useGridRegistry() {
 }
 
 export function groupGridItems(filteredItems: GridItemRegistration[]) {
-  const groups: { title?: string; items: { item: GridItemRegistration; globalIdx: number }[] }[] = [];
-  let currentSection: string | undefined | null = null;
+  const groups: GridItemGroup[] = [];
+  let currentSectionKey: string | undefined | null = null;
   let globalIndex = 0;
 
   for (const item of filteredItems) {
-    if (item.sectionTitle !== currentSection || groups.length === 0) {
-      currentSection = item.sectionTitle;
-      groups.push({ title: item.sectionTitle, items: [] });
+    const section = item.section;
+    const sectionKey = section?.id || section?.title || '__default_grid_section';
+    if (sectionKey !== currentSectionKey || groups.length === 0) {
+      currentSectionKey = sectionKey;
+      groups.push({
+        key: sectionKey,
+        title: section?.title,
+        subtitle: section?.subtitle,
+        section,
+        items: [],
+      });
     }
     groups[groups.length - 1].items.push({ item, globalIdx: globalIndex++ });
   }

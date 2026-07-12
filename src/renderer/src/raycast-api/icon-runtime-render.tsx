@@ -7,30 +7,81 @@ import React, { useEffect, useState } from 'react';
 import { isRaycastIconName, renderPhosphorIcon } from './icon-runtime-phosphor';
 import { isEmojiOrSymbol, renderTintedAssetIcon, resolveIconSrc, resolveTintColor } from './icon-runtime-assets';
 
+const FILE_ICON_CACHE_MAX_ENTRIES = 1024;
 const fileIconCache = new Map<string, string | null>();
+const inFlightFileIconRequests = new Map<string, Promise<string | null>>();
+
+function peekCachedFileIcon(filePath: string): string | null | undefined {
+  if (!fileIconCache.has(filePath)) return undefined;
+  return fileIconCache.get(filePath) ?? null;
+}
+
+function readCachedFileIcon(filePath: string): string | null | undefined {
+  const cached = peekCachedFileIcon(filePath);
+  if (cached === undefined) return undefined;
+  fileIconCache.delete(filePath);
+  fileIconCache.set(filePath, cached);
+  return cached;
+}
+
+function writeCachedFileIcon(filePath: string, src: string | null) {
+  if (fileIconCache.has(filePath)) fileIconCache.delete(filePath);
+  fileIconCache.set(filePath, src);
+
+  while (fileIconCache.size > FILE_ICON_CACHE_MAX_ENTRIES) {
+    const oldestKey = fileIconCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    fileIconCache.delete(oldestKey);
+  }
+}
+
+function loadFileIconDataUrl(filePath: string): Promise<string | null> {
+  const cached = readCachedFileIcon(filePath);
+  if (cached !== undefined) return Promise.resolve(cached);
+
+  const pending = inFlightFileIconRequests.get(filePath);
+  if (pending) return pending;
+
+  const getFileIconDataUrl = typeof window !== 'undefined'
+    ? (window as any).electron?.getFileIconDataUrl
+    : undefined;
+  if (typeof getFileIconDataUrl !== 'function') return Promise.resolve(null);
+
+  let request: Promise<string | null>;
+  try {
+    request = Promise.resolve(getFileIconDataUrl(filePath, 20))
+      .then((iconSrc: string | null | undefined) => {
+        const normalized = iconSrc || null;
+        writeCachedFileIcon(filePath, normalized);
+        return normalized;
+      })
+      .catch(() => null)
+      .finally(() => {
+        inFlightFileIconRequests.delete(filePath);
+      });
+  } catch {
+    return Promise.resolve(null);
+  }
+
+  inFlightFileIconRequests.set(filePath, request);
+  return request;
+}
 
 function FileIcon({ filePath, className }: { filePath: string; className: string }) {
-  const [src, setSrc] = useState<string | null>(() => fileIconCache.get(filePath) ?? null);
+  const [src, setSrc] = useState<string | null>(() => peekCachedFileIcon(filePath) ?? null);
 
   useEffect(() => {
     let cancelled = false;
-    const cached = fileIconCache.get(filePath);
+    const cached = readCachedFileIcon(filePath);
     if (cached !== undefined) {
       setSrc(cached);
       return;
     }
 
-    (window as any).electron?.getFileIconDataUrl?.(filePath, 20)
-      .then((iconSrc: string | null) => {
-        if (cancelled) return;
-        fileIconCache.set(filePath, iconSrc || null);
-        setSrc(iconSrc || null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        fileIconCache.set(filePath, null);
-        setSrc(null);
-      });
+    loadFileIconDataUrl(filePath).then((iconSrc) => {
+      if (cancelled) return;
+      setSrc(iconSrc);
+    });
 
     return () => {
       cancelled = true;

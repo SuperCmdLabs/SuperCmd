@@ -16,8 +16,26 @@ type PhosphorIconComponent = React.ComponentType<{
   style?: React.CSSProperties;
   weight?: PhosphorIconWeight;
 }>;
+type PhosphorIconResolution = { icon: PhosphorIconComponent; weight: PhosphorIconWeight };
 
 type PhosphorExportValue = unknown;
+
+const ICON_RESOLUTION_CACHE_LIMIT = 2048;
+const raycastIconNameResolutionCache = new Map<string, RaycastIconName | null>();
+const phosphorNameResolutionCache = new Map<string, PhosphorIconComponent | null>();
+const phosphorIconResolutionCache = new Map<string, PhosphorIconResolution | null>();
+
+function setBoundedCacheEntry<K, V>(cache: Map<K, V>, key: K, value: V) {
+  if (!cache.has(key) && cache.size >= ICON_RESOLUTION_CACHE_LIMIT) {
+    cache.clear();
+  }
+  cache.set(key, value);
+}
+
+function cachePhosphorIconResolution(input: string, result: PhosphorIconResolution | undefined): PhosphorIconResolution | undefined {
+  setBoundedCacheEntry(phosphorIconResolutionCache, input, result || null);
+  return result;
+}
 
 function normalizeIconName(name: string): string {
   return String(name || '')
@@ -76,29 +94,61 @@ if (RAYCAST_ICON_VALUE_TO_NAME instanceof Map) {
 
 function resolveRaycastIconName(input: string): RaycastIconName | undefined {
   const rawInput = String(input || '').trim();
+  const cached = raycastIconNameResolutionCache.get(rawInput);
+  if (cached !== undefined || raycastIconNameResolutionCache.has(rawInput)) {
+    return cached || undefined;
+  }
+
   const normalized = normalizeIconName(input);
-  if (!rawInput && !normalized) return undefined;
-  if (raycastIconNameSet.has(rawInput)) return rawInput as RaycastIconName;
-  return raycastIconValueToNameMap.get(rawInput) || raycastIconValueToNameMap.get(normalized);
+  let resolved: RaycastIconName | undefined;
+  if (rawInput || normalized) {
+    resolved = raycastIconNameSet.has(rawInput)
+      ? rawInput as RaycastIconName
+      : raycastIconValueToNameMap.get(rawInput) || raycastIconValueToNameMap.get(normalized);
+  }
+
+  setBoundedCacheEntry(raycastIconNameResolutionCache, rawInput, resolved || null);
+  return resolved;
 }
 
 function tryResolvePhosphorByName(name: string): PhosphorIconComponent | undefined {
-  if (!name) return undefined;
+  const cacheKey = String(name || '');
+  const cached = phosphorNameResolutionCache.get(cacheKey);
+  if (cached !== undefined || phosphorNameResolutionCache.has(cacheKey)) {
+    return cached || undefined;
+  }
+
+  if (!name) {
+    setBoundedCacheEntry(phosphorNameResolutionCache, cacheKey, null);
+    return undefined;
+  }
 
   const direct = (Phosphor as Record<string, unknown>)[name];
-  if (isRenderablePhosphorComponent(direct)) return direct as PhosphorIconComponent;
+  if (isRenderablePhosphorComponent(direct)) {
+    const resolved = direct as PhosphorIconComponent;
+    setBoundedCacheEntry(phosphorNameResolutionCache, cacheKey, resolved);
+    return resolved;
+  }
 
   const normalizedTarget = normalizeIconName(name);
-  if (!normalizedTarget) return undefined;
+  if (!normalizedTarget) {
+    setBoundedCacheEntry(phosphorNameResolutionCache, cacheKey, null);
+    return undefined;
+  }
 
   // Some bundling modes can make namespace entries non-enumerable for Object.entries.
   // getOwnPropertyNames is more robust for resolving the export keys.
   for (const key of Object.getOwnPropertyNames(Phosphor)) {
     if (normalizeIconName(key) !== normalizedTarget) continue;
     const candidate = (Phosphor as Record<string, unknown>)[key];
-    if (isRenderablePhosphorComponent(candidate)) return candidate as PhosphorIconComponent;
+    if (isRenderablePhosphorComponent(candidate)) {
+      const resolved = candidate as PhosphorIconComponent;
+      setBoundedCacheEntry(phosphorNameResolutionCache, cacheKey, resolved);
+      return resolved;
+    }
   }
 
+  setBoundedCacheEntry(phosphorNameResolutionCache, cacheKey, null);
   return undefined;
 }
 
@@ -203,7 +253,13 @@ function bestFuzzyPhosphorCandidate(input: string): string | undefined {
   return bestName || undefined;
 }
 
-function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComponent; weight: PhosphorIconWeight } | undefined {
+function resolvePhosphorIconFromRaycast(input: string): PhosphorIconResolution | undefined {
+  const cacheKey = String(input || '');
+  const cached = phosphorIconResolutionCache.get(cacheKey);
+  if (cached !== undefined || phosphorIconResolutionCache.has(cacheKey)) {
+    return cached || undefined;
+  }
+
   const resolvedRaycastName = resolveRaycastIconName(input);
   const iconName = (resolvedRaycastName || input || '').replace(/^Icon\./, '');
   const normalized = normalizeIconName(iconName);
@@ -214,7 +270,7 @@ function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComp
   if (normalized === 'dot' || normalizedBase === 'dot') {
     const dotIcon = tryResolvePhosphorByName('Circle');
     if (dotIcon) {
-      return { icon: dotIcon, weight: 'fill' };
+      return cachePhosphorIconResolution(cacheKey, { icon: dotIcon, weight: 'fill' });
     }
   }
 
@@ -233,7 +289,7 @@ function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComp
   for (const candidate of directCandidates) {
     const resolved = tryResolvePhosphorByName(candidate);
     if (resolved) {
-      return { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+      return cachePhosphorIconResolution(cacheKey, { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' });
     }
   }
 
@@ -244,7 +300,7 @@ function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComp
   for (const candidate of explicitAliases) {
     const resolved = tryResolvePhosphorByName(candidate);
     if (resolved) {
-      return { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+      return cachePhosphorIconResolution(cacheKey, { icon: resolved, weight: shouldUseFillWeight ? 'fill' : 'regular' });
     }
   }
 
@@ -296,7 +352,7 @@ function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComp
   for (const candidate of candidates) {
     const icon = tryResolvePhosphorByName(candidate);
     if (icon) {
-      return { icon, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+      return cachePhosphorIconResolution(cacheKey, { icon, weight: shouldUseFillWeight ? 'fill' : 'regular' });
     }
   }
 
@@ -304,13 +360,13 @@ function resolvePhosphorIconFromRaycast(input: string): { icon: PhosphorIconComp
   if (fuzzyCandidate) {
     const fuzzyResolved = tryResolvePhosphorByName(fuzzyCandidate);
     if (fuzzyResolved) {
-      return { icon: fuzzyResolved, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+      return cachePhosphorIconResolution(cacheKey, { icon: fuzzyResolved, weight: shouldUseFillWeight ? 'fill' : 'regular' });
     }
   }
 
   const fallback = tryResolvePhosphorByName('Question') || tryResolvePhosphorByName('Circle');
-  if (!fallback) return undefined;
-  return { icon: fallback, weight: shouldUseFillWeight ? 'fill' : 'regular' };
+  if (!fallback) return cachePhosphorIconResolution(cacheKey, undefined);
+  return cachePhosphorIconResolution(cacheKey, { icon: fallback, weight: shouldUseFillWeight ? 'fill' : 'regular' });
 }
 
 export function renderPhosphorIcon(input: string, className: string, tint?: string): React.ReactNode {

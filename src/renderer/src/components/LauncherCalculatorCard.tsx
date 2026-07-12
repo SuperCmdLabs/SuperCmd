@@ -6,6 +6,7 @@ import { formatCalcKindLabel } from '../utils/launcher-misc';
 type LauncherCalculatorCardProps = {
   result: CalcResult;
   selected: boolean;
+  style?: React.CSSProperties;
   itemRef: (el: HTMLDivElement | null) => void;
   onCopy: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -14,6 +15,7 @@ type LauncherCalculatorCardProps = {
 const LauncherCalculatorCard: React.FC<LauncherCalculatorCardProps> = ({
   result,
   selected,
+  style,
   itemRef,
   onCopy,
   t,
@@ -25,6 +27,7 @@ const LauncherCalculatorCard: React.FC<LauncherCalculatorCardProps> = ({
         ? 'bg-[color-mix(in_srgb,var(--launcher-card-selected-bg)_60%,transparent)] border-[color-mix(in_srgb,var(--launcher-card-selected-border)_60%,transparent)]'
         : 'bg-transparent border-[color-mix(in_srgb,var(--launcher-card-border)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--launcher-card-hover-bg)_50%,transparent)]'
     }`}
+    style={style}
     onClick={onCopy}
   >
     <div className="relative">

@@ -53,13 +53,14 @@ export function createListRenderers(deps: ListRendererDeps) {
     const registry = useContext(ListRegistryContext);
     const sectionTitle = useContext(ListSectionTitleContext);
     const stableId = useRef(props.id || `__li_${++itemOrderCounter}`).current;
-    const renderOrder = ++itemOrderCounter;
+    const orderRef = useRef<number | null>(null);
+    if (orderRef.current === null) orderRef.current = ++itemOrderCounter;
     const selCtx = useContext(SelectedItemActionsContext);
 
     useLayoutEffect(() => {
-      registry.set(stableId, { props, sectionTitle, order: renderOrder });
+      registry.set(stableId, { props, sectionTitle, order: orderRef.current! });
       return () => registry.delete(stableId);
-    }, [props, registry, renderOrder, sectionTitle, stableId]);
+    }, [props, registry, sectionTitle, stableId]);
 
     // When this item is selected, render its actions within the extension's
     // context tree so that per-item React contexts (e.g. VaultItemContext)
@@ -102,7 +103,7 @@ export function createListRenderers(deps: ListRendererDeps) {
           {icon && <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-[var(--text-muted)] text-xs">{renderIcon(icon, iconClassName, assetsPath)}</div>}
           <div className="flex-1 min-w-0"><span className="text-[13px] leading-[18px] truncate block" style={{ color: 'rgba(var(--on-surface-rgb), 0.9)' }}>{primaryText}</span></div>
           {secondaryText && <span className="text-[11px] leading-[16px] flex-shrink-0 truncate max-w-[220px]" style={{ color: 'var(--text-muted)' }}>{secondaryText}</span>}
-          {accessories?.map((accessory, index) => {
+          {accessories?.map((accessory: ListItemAccessory, index: number) => {
             const accessoryText = typeof accessory?.text === 'string' ? accessory.text : typeof accessory?.text === 'object' ? accessory.text?.value || '' : '';
             const accessoryTextColorRaw = typeof accessory?.text === 'object' ? accessory.text?.color : undefined;
             const tagText = typeof accessory?.tag === 'string' ? accessory.tag : typeof accessory?.tag === 'object' ? accessory.tag?.value || '' : '';

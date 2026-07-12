@@ -21,6 +21,7 @@ var currentQuery  = ""
 var interceptEnabled = false
 var prefixBuffer  = ""   // rolling window of recent chars, length ≤ triggerPrefixLen
 var eventTapRef: CFMachPort?
+var caretSessionCache = EmojiCaretSessionCache()
 
 // MARK: - JSON output
 
@@ -33,38 +34,68 @@ func emit(_ obj: [String: Any]) {
 
 // MARK: - Caret rect + secure-field guard
 
-// Included on every `query` event so the host process can decide whether the
-// frontmost app is on the user's exclusion list. Read here (rather than in the
-// host) because lsappinfo lookups in the host are stale for keystroke-driven
-// flows where the launcher window was never brought forward.
-func currentFrontmostBundleId() -> String {
-  return NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+func resetTriggerState() {
+  triggerActive = false
+  currentQuery = ""
+  interceptEnabled = false
+  prefixBuffer = ""
+  caretSessionCache.invalidate()
 }
 
-func emitQuery(_ query: String) {
-  let bundleId = currentFrontmostBundleId()
-  switch AXCaretQuery.current() {
+func dismissTrigger(emitDismiss: Bool = true) {
+  resetTriggerState()
+  if emitDismiss { emit(["type": "dismiss"]) }
+}
+
+func eventTargetPID(from event: CGEvent) -> pid_t? {
+  let rawPID = event.getIntegerValueField(.eventTargetUnixProcessID)
+  return rawPID > 0 ? pid_t(rawPID) : nil
+}
+
+func sessionValidationPID(from event: CGEvent) -> pid_t? {
+  if let targetPID = eventTargetPID(from: event) { return targetPID }
+  guard caretSessionCache.isActive else { return nil }
+  return NSWorkspace.shared.frontmostApplication?.processIdentifier
+}
+
+func emitQueryPayload(_ query: String, bundleId: String, caret: AXCaretRect?) {
+  var payload: [String: Any] = [
+    "type":      "query",
+    "value":     query,
+    "prefixLen": triggerPrefixLen,
+    "bundleId":  bundleId,
+  ]
+  if let caret {
+    payload["caret"] = ["x": caret.x, "y": caret.y, "w": caret.w, "h": caret.h, "tier": caret.tier]
+  }
+  emit(payload)
+}
+
+func emitQuery(_ query: String, eventTargetPID: pid_t?) {
+  switch caretSessionCache.validate(eventTargetPID: eventTargetPID) {
+  case .valid(let snapshot):
+    emitQueryPayload(query, bundleId: snapshot.context.bundleIdentifier, caret: snapshot.caret)
+    return
+  case .invalidated:
+    dismissTrigger()
+    return
+  case .empty:
+    break
+  }
+
+  switch AXCaretQuery.currentSession() {
   case .secureField:
-    triggerActive    = false
-    currentQuery     = ""
-    interceptEnabled = false
-    prefixBuffer     = ""
-    emit(["type": "dismiss"])
-  case .rect(let caret):
-    emit([
-      "type":      "query",
-      "value":     query,
-      "prefixLen": triggerPrefixLen,
-      "bundleId":  bundleId,
-      "caret":     ["x": caret.x, "y": caret.y, "w": caret.w, "h": caret.h, "tier": caret.tier],
-    ])
-  case .noRect:
-    emit([
-      "type":      "query",
-      "value":     query,
-      "prefixLen": triggerPrefixLen,
-      "bundleId":  bundleId,
-    ])
+    dismissTrigger()
+  case .snapshot(let snapshot):
+    if let targetPID = eventTargetPID, targetPID > 0, targetPID != snapshot.context.pid {
+      dismissTrigger()
+      return
+    }
+    caretSessionCache.store(snapshot)
+    emitQueryPayload(query, bundleId: snapshot.context.bundleIdentifier, caret: snapshot.caret)
+  case .noRect(let context):
+    caretSessionCache.invalidate()
+    emitQueryPayload(query, bundleId: context?.bundleIdentifier ?? "", caret: nil)
   }
 }
 
@@ -131,9 +162,7 @@ func run() {
       // a partial prefix that could accidentally fire on the next keystroke.
       if hasCmd || hasCtrl {
         if triggerActive {
-          triggerActive = false
-          currentQuery  = ""
-          emit(["type": "dismiss"])
+          dismissTrigger()
         }
         prefixBuffer = "" // clear regardless of triggerActive (fix A)
         return Unmanaged.passUnretained(event)
@@ -146,10 +175,7 @@ func run() {
       // otherwise silently extend the query with extended chars (ü, ©, etc.)
       // on non-US layouts, which is unintuitive (fix B).
       if hasAlt && triggerActive {
-        triggerActive = false
-        currentQuery  = ""
-        prefixBuffer  = ""
-        emit(["type": "dismiss"])
+        dismissTrigger()
         return Unmanaged.passUnretained(event)
       }
 
@@ -159,7 +185,7 @@ func run() {
         switch keyCode {
         case 36: emit(["type": "nav", "key": "enter"]);  return nil
         case 53:
-          triggerActive = false; currentQuery = ""; prefixBuffer = ""
+          resetTriggerState()
           emit(["type": "nav", "key": "escape"])
           return nil
         case 48: emit(["type": "nav", "key": "tab"]);    return nil
@@ -175,13 +201,10 @@ func run() {
         if triggerActive {
           if currentQuery.isEmpty {
             // Backspaced through the entire query back into the prefix — dismiss.
-            triggerActive = false
-            interceptEnabled = false
-            prefixBuffer  = ""
-            emit(["type": "dismiss"])
+            dismissTrigger()
           } else {
             currentQuery.removeLast()
-            emitQuery(currentQuery)
+            emitQuery(currentQuery, eventTargetPID: sessionValidationPID(from: event))
           }
         } else {
           // Update prefix buffer for non-trigger backspace.
@@ -194,8 +217,7 @@ func run() {
       let chars = extractTypedChars(from: event)
       if chars.isEmpty {
         if triggerActive {
-          triggerActive = false; currentQuery = ""; prefixBuffer = ""
-          emit(["type": "dismiss"])
+          dismissTrigger()
         }
         return Unmanaged.passUnretained(event)
       }
@@ -206,15 +228,13 @@ func run() {
           if isEmojiQueryChar(char) {
             currentQuery.append(char)
             if currentQuery.count > 30 {
-              triggerActive = false; currentQuery = ""; prefixBuffer = ""
-              emit(["type": "dismiss"])
+              dismissTrigger()
             } else {
-              emitQuery(currentQuery)
+              emitQuery(currentQuery, eventTargetPID: sessionValidationPID(from: event))
             }
           } else {
             // Non-query char (space, punctuation, …) → dismiss trigger.
-            triggerActive = false; currentQuery = ""; prefixBuffer = ""
-            emit(["type": "dismiss"])
+            dismissTrigger()
             // Feed this char into the prefix buffer in case it starts the
             // next trigger (e.g. when trigger prefix contains this char).
             feedPrefixBuffer(char)
@@ -268,8 +288,7 @@ func run() {
         interceptEnabled = json["enabled"] as? Bool ?? false
       case "dismiss":
         if triggerActive {
-          triggerActive = false; currentQuery = ""; interceptEnabled = false; prefixBuffer = ""
-          emit(["type": "dismiss"])
+          dismissTrigger()
         }
       default: break
       }

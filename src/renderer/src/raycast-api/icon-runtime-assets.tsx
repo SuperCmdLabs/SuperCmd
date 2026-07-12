@@ -6,6 +6,10 @@
 import React from 'react';
 import { getIconRuntimeContext } from './icon-runtime-config';
 
+const LOCAL_PATH_EXISTS_CACHE_MAX = 4096;
+export const LOCAL_PATH_EXISTS_CACHE_TTL_MS = 30_000;
+const positiveLocalPathExistsCache = new Map<string, number>();
+
 type RgbColor = {
   r: number;
   g: number;
@@ -41,9 +45,22 @@ export function toScAssetUrl(filePath: string): string {
 
 function localPathExists(filePath: string): boolean {
   if (!filePath) return false;
+  const cachedAt = positiveLocalPathExistsCache.get(filePath);
+  if (cachedAt !== undefined && Date.now() - cachedAt < LOCAL_PATH_EXISTS_CACHE_TTL_MS) return true;
+  if (cachedAt !== undefined) {
+    positiveLocalPathExistsCache.delete(filePath);
+  }
+
   try {
     const stat = (window as any).electron?.statSync?.(filePath);
-    return Boolean(stat?.exists);
+    const exists = Boolean(stat?.exists);
+    if (exists) {
+      if (positiveLocalPathExistsCache.size >= LOCAL_PATH_EXISTS_CACHE_MAX) {
+        positiveLocalPathExistsCache.clear();
+      }
+      positiveLocalPathExistsCache.set(filePath, Date.now());
+    }
+    return exists;
   } catch {
     return false;
   }

@@ -10245,6 +10245,7 @@ function startEmojiTriggerMonitor(triggerPrefix = ':'): void {
         '-O', '-o', binaryPath,
         path.join(nativeDir, 'emoji-trigger-monitor.swift'),
         path.join(nativeDir, 'ax-caret-query.swift'),
+        path.join(nativeDir, 'emoji-caret-session-cache.swift'),
         '-framework', 'AppKit',
         '-framework', 'ApplicationServices',
       ]);
