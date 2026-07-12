@@ -161,9 +161,12 @@ public enum AXCaretQuery {
     }
     // BFS up to a small depth to avoid walking huge trees.
     var queue: [(el: AXUIElement, depth: Int)] = [(root, 0)]
+    var queueIndex = 0
     let maxDepth = 6
-    while let (el, depth) = queue.first {
-      queue.removeFirst()
+    let maxElements = 240
+    while queueIndex < queue.count && queueIndex < maxElements {
+      let (el, depth) = queue[queueIndex]
+      queueIndex += 1
       if depth > 0 {
         let role = copyString(el, kAXRoleAttribute as CFString) ?? ""
         if TEXT_LEAF_ROLES.contains(role) && hasSelectedTextRange(el) {
@@ -183,13 +186,16 @@ public enum AXCaretQuery {
       var focusedRaw: AnyObject?
       if AXUIElementCopyAttributeValue(el, kAXFocusedUIElementAttribute as CFString, &focusedRaw) == .success,
          let next = focusedRaw, CFGetTypeID(next) == AXUIElementGetTypeID() {
-        queue.append((next as! AXUIElement, depth + 1))
+        if queue.count < maxElements {
+          queue.append((next as! AXUIElement, depth + 1))
+        }
         continue
       }
       var childrenRaw: AnyObject?
       if AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &childrenRaw) == .success,
          let arr = childrenRaw as? [AXUIElement] {
         for child in arr {
+          if queue.count >= maxElements { break }
           queue.append((child, depth + 1))
         }
       }

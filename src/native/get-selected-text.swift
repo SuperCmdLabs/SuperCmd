@@ -163,12 +163,14 @@ private func enqueueChildren(of element: AXUIElement, depth: Int, into queue: in
 
 private func findSelectedText(from roots: [AXUIElement]) -> String? {
   var queue = roots.map { ($0, 0) }
+  var queueIndex = 0
   var inspected = 0
   let maxDepth = 8
   let maxElements = 240
 
-  while let (element, depth) = queue.first {
-    queue.removeFirst()
+  while queueIndex < queue.count {
+    let (element, depth) = queue[queueIndex]
+    queueIndex += 1
     inspected += 1
     if inspected > maxElements { break }
 

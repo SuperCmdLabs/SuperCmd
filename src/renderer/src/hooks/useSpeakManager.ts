@@ -10,8 +10,8 @@
  * - handleSpeakVoiceChange / handleSpeakRateChange: persist user selections to settings
  * - Opens a detached portal window for the speak overlay via useDetachedPortalWindow
  *
- * Polls speak status from the main process while the overlay is visible, and syncs
- * the configured voice from settings each time the overlay opens.
+ * Listens for speak status updates from the main process, and syncs
+ * the configured voice from initial settings plus live settings updates.
  */
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
@@ -23,9 +23,19 @@ import {
   getCachedElevenLabsVoices,
   setCachedElevenLabsVoices,
 } from '../utils/voice-cache';
+import {
+  applySpeakSettings,
+  buildElevenLabsSpeakModel,
+  DEFAULT_EDGE_TTS_VOICE,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_TTS_MODEL,
+  parseElevenLabsSpeakModel,
+  type SpeakOptions,
+  type SpeakSettingsSnapshot,
+} from '../utils/speak-settings-sync';
 
 const ELEVENLABS_VOICES: Array<{ id: string; label: string }> = [
-  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel' },
+  { id: DEFAULT_ELEVENLABS_VOICE_ID, label: 'Rachel' },
   { id: 'AZnzlk1XvdvUeBnXmlld', label: 'Domi' },
   { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Bella' },
   { id: 'ErXwobaYiN019PkySvjV', label: 'Antoni' },
@@ -35,23 +45,6 @@ const ELEVENLABS_VOICES: Array<{ id: string; label: string }> = [
   { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam' },
   { id: 'yoZ06aMxZJJ28mfd3POQ', label: 'Sam' },
 ];
-
-const DEFAULT_ELEVENLABS_VOICE_ID = ELEVENLABS_VOICES[0].id;
-
-function parseElevenLabsSpeakModel(raw: string): { model: string; voiceId: string } {
-  const value = String(raw || '').trim();
-  const explicitVoice = /@([A-Za-z0-9]{8,})$/.exec(value)?.[1];
-  const modelOnly = explicitVoice ? value.replace(/@[A-Za-z0-9]{8,}$/, '') : value;
-  const model = modelOnly.startsWith('elevenlabs-') ? modelOnly : 'elevenlabs-multilingual-v2';
-  const voiceId = explicitVoice || DEFAULT_ELEVENLABS_VOICE_ID;
-  return { model, voiceId };
-}
-
-function buildElevenLabsSpeakModel(model: string, voiceId: string): string {
-  const normalizedModel = String(model || '').trim() || 'elevenlabs-multilingual-v2';
-  const normalizedVoice = String(voiceId || '').trim() || DEFAULT_ELEVENLABS_VOICE_ID;
-  return `${normalizedModel}@${normalizedVoice}`;
-}
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -71,7 +64,7 @@ export interface UseSpeakManagerOptions {
 
 export interface UseSpeakManagerReturn {
   speakStatus: SpeakStatus;
-  speakOptions: { voice: string; rate: string };
+  speakOptions: SpeakOptions;
   edgeTtsVoices: EdgeTtsVoice[];
   configuredEdgeTtsVoice: string;
   configuredTtsModel: string;
@@ -98,17 +91,23 @@ export function useSpeakManager({
     index: 0,
     total: 0,
   });
-  const [speakOptions, setSpeakOptions] = useState<{ voice: string; rate: string }>({
-    voice: 'en-US-EricNeural',
+  const [speakOptions, setSpeakOptions] = useState<SpeakOptions>({
+    voice: DEFAULT_EDGE_TTS_VOICE,
     rate: '+0%',
   });
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<EdgeTtsVoice[]>([]);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
-  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState('en-US-EricNeural');
-  const [configuredTtsModel, setConfiguredTtsModel] = useState('edge-tts');
+  const [configuredEdgeTtsVoice, setConfiguredEdgeTtsVoice] = useState(DEFAULT_EDGE_TTS_VOICE);
+  const [configuredTtsModel, setConfiguredTtsModel] = useState(DEFAULT_TTS_MODEL);
 
+  const speakOptionsVoiceRef = useRef(speakOptions.voice);
   const speakSessionShownRef = useRef(false);
   const pauseToggleInFlightRef = useRef(false);
+
+  const applySpeakOptions = useCallback((next: SpeakOptions) => {
+    speakOptionsVoiceRef.current = next.voice;
+    setSpeakOptions(next);
+  }, []);
 
   // ── Portal ─────────────────────────────────────────────────────────
 
@@ -135,7 +134,7 @@ export function useSpeakManager({
   useEffect(() => {
     let disposed = false;
     window.electron.speakGetOptions().then((options) => {
-      if (!disposed && options) setSpeakOptions(options);
+      if (!disposed && options) applySpeakOptions(options);
     }).catch(() => {});
     window.electron.speakGetStatus().then((status) => {
       if (!disposed && status) setSpeakStatus(status);
@@ -147,7 +146,7 @@ export function useSpeakManager({
       disposed = true;
       disposeSpeak();
     };
-  }, []);
+  }, [applySpeakOptions]);
 
   // Edge TTS voice list fetch
   useEffect(() => {
@@ -205,49 +204,30 @@ export function useSpeakManager({
     };
   }, [configuredTtsModel]);
 
-  // Sync configured voice from settings whenever they change
+  // Sync configured voice from initial settings and live settings updates
   useEffect(() => {
     let disposed = false;
-    const syncFromSettings = async () => {
-      try {
-        const settings = await window.electron.getSettings();
-        if (disposed) return;
-        
-        const ttsModel = String(settings.ai?.textToSpeechModel || 'edge-tts');
-        const edgeVoice = String(settings.ai?.edgeTtsVoice || 'en-US-EricNeural');
-        
-        setConfiguredTtsModel(ttsModel);
-        setConfiguredEdgeTtsVoice(edgeVoice);
-        
-        // Also sync speakOptions to match settings
-        const usingElevenLabs = ttsModel.startsWith('elevenlabs-');
-        const targetVoice = usingElevenLabs
-          ? parseElevenLabsSpeakModel(ttsModel).voiceId
-          : edgeVoice;
-        
-        if (targetVoice && targetVoice !== speakOptions.voice) {
-          const next = await window.electron.speakUpdateOptions({
-            voice: targetVoice,
-            restartCurrent: false,
-          });
-          setSpeakOptions(next);
-        }
-      } catch {
-        // Ignore errors
-      }
+    const syncFromSettings = (settings: SpeakSettingsSnapshot | null | undefined) => {
+      void applySpeakSettings(settings, {
+        getCurrentVoice: () => speakOptionsVoiceRef.current,
+        setConfiguredTtsModel,
+        setConfiguredEdgeTtsVoice,
+        updateSpeakOptions: (patch) => window.electron.speakUpdateOptions(patch),
+        setSpeakOptions: applySpeakOptions,
+        isDisposed: () => disposed,
+      }).catch(() => {});
     };
-    
-    // Initial sync
-    syncFromSettings();
-    
-    // Poll for settings changes every 2 seconds while widget is relevant
-    const interval = setInterval(syncFromSettings, 2000);
-    
+
+    window.electron.getSettings().then(syncFromSettings).catch(() => {});
+    const cleanupSettings = window.electron.onSettingsUpdated?.((settings) => {
+      syncFromSettings(settings);
+    });
+
     return () => {
       disposed = true;
-      clearInterval(interval);
+      cleanupSettings?.();
     };
-  }, []);
+  }, [applySpeakOptions]);
 
   // Auto-sync configured voice when speak view opens
   useEffect(() => {
@@ -266,9 +246,9 @@ export function useSpeakManager({
       voice: targetVoice,
       restartCurrent: true,
     }).then((next) => {
-      setSpeakOptions(next);
+      applySpeakOptions(next);
     }).catch(() => {});
-  }, [showSpeak, configuredTtsModel, configuredEdgeTtsVoice, speakOptions.voice]);
+  }, [showSpeak, configuredTtsModel, configuredEdgeTtsVoice, speakOptions.voice, applySpeakOptions]);
 
   // ── Memos ──────────────────────────────────────────────────────────
 
@@ -317,7 +297,7 @@ export function useSpeakManager({
           voice,
           restartCurrent: true,
         });
-        setSpeakOptions(next);
+        applySpeakOptions(next);
       } catch {}
       return;
     }
@@ -333,17 +313,17 @@ export function useSpeakManager({
         voice,
         restartCurrent: true,
       });
-      setSpeakOptions(next);
+      applySpeakOptions(next);
     } catch {}
-  }, [configuredTtsModel]);
+  }, [configuredTtsModel, applySpeakOptions]);
 
   const handleSpeakRateChange = useCallback(async (rate: string) => {
     const next = await window.electron.speakUpdateOptions({
       rate,
       restartCurrent: true,
     });
-    setSpeakOptions(next);
-  }, []);
+    applySpeakOptions(next);
+  }, [applySpeakOptions]);
 
   const handleSpeakTogglePause = useCallback(async () => {
     if (pauseToggleInFlightRef.current) return;
