@@ -2481,8 +2481,6 @@ let memoryStatusHideTimer: NodeJS.Timeout | null = null;
 let memoryStatusFadeFinalizeTimer: NodeJS.Timeout | null = null;
 let memoryStatusRenderSeq = 0;
 let memoryStatusHideTimerSeq = 0;
-let confettiWindow: InstanceType<typeof BrowserWindow> | null = null;
-let confettiCloseTimer: NodeJS.Timeout | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -2841,24 +2839,25 @@ function getConfettiWindowHtml(): string {
 
       const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585', '#b8f2e6', '#ffffff'];
       const particles = [];
-      // Two bursts from lower-left and lower-right, plus a center shower
+      // Two wide bursts from the bottom corners, plus a center shower, sized
+      // to cover most of the screen rather than three small isolated clumps.
       const bursts = [
-        { x: canvas.width * 0.15, y: canvas.height * 0.85, angle: -Math.PI * 0.30, spread: 0.9 },
-        { x: canvas.width * 0.85, y: canvas.height * 0.85, angle: -Math.PI * 0.70, spread: 0.9 },
-        { x: canvas.width * 0.50, y: canvas.height * 0.55, angle: -Math.PI * 0.50, spread: 1.1 },
+        { x: canvas.width * 0.06, y: canvas.height * 0.95, angle: -Math.PI * 0.28, spread: 1.0 },
+        { x: canvas.width * 0.94, y: canvas.height * 0.95, angle: -Math.PI * 0.72, spread: 1.0 },
+        { x: canvas.width * 0.50, y: canvas.height * 0.55, angle: -Math.PI * 0.50, spread: 1.3 },
       ];
-      const gravity = 0.32 * dpr;
+      const gravity = 0.28 * dpr;
       for (const b of bursts) {
-        const count = 110;
+        const count = 220;
         for (let i = 0; i < count; i++) {
           const a = b.angle + (Math.random() - 0.5) * b.spread;
-          const speed = (9 + Math.random() * 12) * dpr;
+          const speed = (14 + Math.random() * 22) * dpr;
           particles.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * speed,
             vy: Math.sin(a) * speed,
-            size: (4 + Math.random() * 7) * dpr,
+            size: (6 + Math.random() * 10) * dpr,
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
             rot: Math.random() * Math.PI * 2,
             rotSpeed: (Math.random() - 0.5) * 0.3,
@@ -2866,7 +2865,7 @@ function getConfettiWindowHtml(): string {
         }
       }
 
-      const durationMs = 1800;
+      const durationMs = 2400;
       const start = performance.now();
       function tick(now) {
         const elapsed = now - start;
@@ -2876,7 +2875,7 @@ function getConfettiWindowHtml(): string {
           p.x += p.vx;
           p.y += p.vy;
           p.vy += gravity;
-          p.vx *= 0.993;
+          p.vx *= 0.996;
           p.rot += p.rotSpeed;
           ctx.save();
           ctx.translate(p.x, p.y);
@@ -2899,24 +2898,139 @@ function getConfettiWindowHtml(): string {
 </html>`;
 }
 
-function closeConfettiWindow(): void {
-  if (confettiCloseTimer) {
-    clearTimeout(confettiCloseTimer);
-    confettiCloseTimer = null;
-  }
-  if (confettiWindow && !confettiWindow.isDestroyed()) {
-    try { confettiWindow.close(); } catch {}
-  }
-  confettiWindow = null;
+function getFireworksWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const SHELL_COLORS = ['#ff4d6d', '#ffd166', '#4cc9f0', '#06d6a0', '#f72585', '#c77dff'];
+
+      // Each shell launches from the bottom on its own delay, climbs to an
+      // apex leaving a fading trail, then explodes into a radial shower.
+      const shells = [0, 1, 2, 3, 4].map((i) => {
+        const launchX = canvas.width * (0.18 + Math.random() * 0.64);
+        const apexY = canvas.height * (0.18 + Math.random() * 0.24);
+        return {
+          launchDelay: i * 480 + Math.random() * 200,
+          x: launchX,
+          y: canvas.height,
+          apexY,
+          vy: -(11 + Math.random() * 2.5) * dpr,
+          color: SHELL_COLORS[Math.floor(Math.random() * SHELL_COLORS.length)],
+          trail: [],
+          exploded: false,
+          launched: false,
+        };
+      });
+
+      const explosionParticles = [];
+      const gravity = 0.12 * dpr;
+
+      function explode(shell) {
+        shell.exploded = true;
+        const count = 90;
+        for (let i = 0; i < count; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const speed = (3 + Math.random() * 7) * dpr;
+          const useSparkle = Math.random() < 0.25;
+          explosionParticles.push({
+            x: shell.x,
+            y: shell.y,
+            vx: Math.cos(a) * speed,
+            vy: Math.sin(a) * speed,
+            size: (useSparkle ? 2 + Math.random() * 2 : 3 + Math.random() * 3) * dpr,
+            color: useSparkle ? '#ffffff' : shell.color,
+            life: 1,
+            decay: 0.012 + Math.random() * 0.01,
+          });
+        }
+      }
+
+      const durationMs = 4200;
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (const shell of shells) {
+          if (shell.exploded || elapsed < shell.launchDelay) continue;
+          shell.launched = true;
+          shell.trail.push({ x: shell.x, y: shell.y });
+          if (shell.trail.length > 10) shell.trail.shift();
+          shell.y += shell.vy;
+          shell.vy += gravity * 0.5;
+          if (shell.y <= shell.apexY || shell.vy >= -0.5 * dpr) {
+            explode(shell);
+            continue;
+          }
+          for (let i = 0; i < shell.trail.length; i++) {
+            const t = shell.trail[i];
+            ctx.globalAlpha = (i + 1) / shell.trail.length * 0.7;
+            ctx.fillStyle = shell.color;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, 1.6 * dpr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+          const p = explosionParticles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += gravity;
+          p.vx *= 0.98;
+          p.life -= p.decay;
+          if (p.life <= 0) {
+            explosionParticles.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
 }
 
-async function showConfettiBurst(): Promise<void> {
+async function showFullScreenOverlayEffect(html: string, durationMs: number, label: string): Promise<void> {
+  let win: InstanceType<typeof BrowserWindow> | null = null;
   try {
-    closeConfettiWindow();
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor) || screen.getPrimaryDisplay();
     const { x, y, width, height } = display.bounds;
-    confettiWindow = new BrowserWindow({
+    win = new BrowserWindow({
       x,
       y,
       width,
@@ -2940,28 +3054,251 @@ async function showConfettiBurst(): Promise<void> {
         sandbox: true,
       },
     });
-    disableWindowAnimation(confettiWindow);
-    try { confettiWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
-    try { confettiWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
-    try { confettiWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
-    const win = confettiWindow;
-    win.on('closed', () => {
-      if (confettiWindow === win) confettiWindow = null;
-    });
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getConfettiWindowHtml())}`);
-    if (win.isDestroyed()) return;
+    disableWindowAnimation(win);
+    try { win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+    try { win.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+    try { win.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+    const thisWin = win;
+    await thisWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    if (thisWin.isDestroyed()) return;
     try {
-      if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
-      else win.show();
+      if (typeof (thisWin as any).showInactive === 'function') (thisWin as any).showInactive();
+      else thisWin.show();
     } catch {}
-    confettiCloseTimer = setTimeout(() => {
-      confettiCloseTimer = null;
-      closeConfettiWindow();
-    }, 2200);
+    setTimeout(() => {
+      if (!thisWin.isDestroyed()) {
+        try { thisWin.close(); } catch {}
+      }
+    }, durationMs);
   } catch (error) {
-    console.warn('[Confetti] Failed to show confetti burst:', error);
-    closeConfettiWindow();
+    console.warn(`[${label}] Failed to show overlay effect:`, error);
+    if (win && !win.isDestroyed()) {
+      try { win.close(); } catch {}
+    }
   }
+}
+
+function getSnowWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const durationMs = 7000;
+      const fadeOutStart = durationMs - 900;
+      // Density scales with screen area so it looks equally thick on any display.
+      const targetCount = Math.max(220, Math.min(550, Math.round((w * h) / 6000)));
+      const flakes = [];
+
+      function spawnFlake(atRandomY) {
+        const size = (1.5 + Math.random() * 3.2) * dpr;
+        flakes.push({
+          x: Math.random() * canvas.width,
+          y: atRandomY ? Math.random() * canvas.height : -size * 2,
+          size,
+          speed: (0.7 + Math.random() * 1.6) * dpr * (size / (3 * dpr)),
+          swayPhase: Math.random() * Math.PI * 2,
+          swaySpeed: 0.015 + Math.random() * 0.02,
+          swayAmp: (0.6 + Math.random() * 1.4) * dpr,
+          opacity: 0.45 + Math.random() * 0.5,
+        });
+      }
+      for (let i = 0; i < targetCount; i++) spawnFlake(true);
+
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const stillSpawning = elapsed < fadeOutStart;
+        const fadeMul = elapsed > fadeOutStart
+          ? Math.max(0, 1 - (elapsed - fadeOutStart) / (durationMs - fadeOutStart))
+          : 1;
+
+        for (let i = flakes.length - 1; i >= 0; i--) {
+          const f = flakes[i];
+          f.swayPhase += f.swaySpeed;
+          f.y += f.speed;
+          f.x += Math.sin(f.swayPhase) * f.swayAmp * 0.05;
+          if (f.y > canvas.height + f.size * 2) {
+            if (stillSpawning) {
+              f.y = -f.size * 2;
+              f.x = Math.random() * canvas.width;
+            } else {
+              flakes.splice(i, 1);
+              continue;
+            }
+          }
+          ctx.globalAlpha = f.opacity * fadeMul;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs && flakes.length > 0) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+function getRainWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const durationMs = 7000;
+      const fadeOutStart = durationMs - 900;
+      const targetCount = Math.max(260, Math.min(600, Math.round((w * h) / 5200)));
+      const windAngle = Math.PI * 0.44; // slight lean, mostly downward
+      const drops = [];
+      const splashes = [];
+      const groundY = canvas.height * 0.985;
+
+      function spawnDrop(atRandomY) {
+        const length = (14 + Math.random() * 16) * dpr;
+        const speed = (16 + Math.random() * 14) * dpr;
+        drops.push({
+          x: Math.random() * (canvas.width + canvas.height) - canvas.height * 0.5,
+          y: atRandomY ? Math.random() * canvas.height : -length,
+          length,
+          speed,
+          opacity: 0.25 + Math.random() * 0.35,
+        });
+      }
+      for (let i = 0; i < targetCount; i++) spawnDrop(true);
+
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const stillSpawning = elapsed < fadeOutStart;
+        const fadeMul = elapsed > fadeOutStart
+          ? Math.max(0, 1 - (elapsed - fadeOutStart) / (durationMs - fadeOutStart))
+          : 1;
+        const dx = Math.cos(windAngle);
+        const dy = Math.sin(windAngle);
+
+        ctx.lineWidth = 1.4 * dpr;
+        ctx.lineCap = 'round';
+        for (let i = drops.length - 1; i >= 0; i--) {
+          const d = drops[i];
+          d.x += dx * d.speed;
+          d.y += dy * d.speed;
+          if (d.y > groundY) {
+            if (splashes.length < 60 && stillSpawning) {
+              splashes.push({ x: d.x, y: groundY, r: 0, life: 1 });
+            }
+            if (stillSpawning) {
+              d.y = -d.length;
+              d.x = Math.random() * (canvas.width + canvas.height) - canvas.height * 0.5;
+              continue;
+            }
+            drops.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = d.opacity * fadeMul;
+          ctx.strokeStyle = '#cbe3ff';
+          ctx.beginPath();
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d.x - dx * d.length, d.y - dy * d.length);
+          ctx.stroke();
+        }
+
+        for (let i = splashes.length - 1; i >= 0; i--) {
+          const s = splashes[i];
+          s.r += 0.9 * dpr;
+          s.life -= 0.07;
+          if (s.life <= 0) {
+            splashes.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = Math.max(0, s.life) * 0.5 * fadeMul;
+          ctx.strokeStyle = '#cbe3ff';
+          ctx.lineWidth = 1 * dpr;
+          ctx.beginPath();
+          ctx.ellipse(s.x, s.y, s.r * 1.6, s.r * 0.5, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs && (drops.length > 0 || splashes.length > 0)) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+// Each burst gets its own overlay window rather than replacing a previous
+// one — firing the command again while a burst is still animating layers a
+// new one on top, matching Raycast's behavior instead of wiping the screen
+// clean first.
+async function showConfettiBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getConfettiWindowHtml(), 2800, 'Confetti');
+}
+
+async function showFireworksBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getFireworksWindowHtml(), 4500, 'Fireworks');
+}
+
+async function showSnowBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getSnowWindowHtml(), 7000, 'Snow');
+}
+
+async function showRainBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getRainWindowHtml(), 7000, 'Rain');
 }
 
 type AppUpdaterState =
@@ -7494,6 +7831,34 @@ function ensureAppTray(): void {
         },
         { type: 'separator' },
         {
+          label: 'Extension Store...',
+          click: () => {
+            openExtensionStoreWindow();
+          },
+        },
+        {
+          label: 'SuperCmd Settings...',
+          click: () => {
+            openSettingsWindow();
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Launch at Login',
+          type: 'checkbox',
+          checked: Boolean((loadSettings() as any).openAtLogin),
+          click: (menuItem: any) => {
+            setOpenAtLogin(menuItem.checked);
+          },
+        },
+        {
+          label: 'Check for Updates...',
+          click: () => {
+            void runAppUpdaterCheckAndInstall();
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Quit SuperCmd',
           click: () => {
             app.quit();
@@ -10868,6 +11233,30 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     return true;
   }
 
+  if (commandId === 'system-confetti') {
+    if (source === 'launcher') hideWindow();
+    void showConfettiBurst();
+    return true;
+  }
+
+  if (commandId === 'system-fireworks') {
+    if (source === 'launcher') hideWindow();
+    void showFireworksBurst();
+    return true;
+  }
+
+  if (commandId === 'system-snow') {
+    if (source === 'launcher') hideWindow();
+    void showSnowBurst();
+    return true;
+  }
+
+  if (commandId === 'system-rain') {
+    if (source === 'launcher') hideWindow();
+    void showRainBurst();
+    return true;
+  }
+
   if (commandId === 'system-reset-launcher-position') {
     clearWindowState();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -13344,6 +13733,55 @@ async function restartAndInstallAppUpdate(): Promise<boolean> {
   return appUpdaterRestartPromise;
 }
 
+async function runAppUpdaterCheckAndInstall(): Promise<{ success: boolean; error?: string; message?: string; state?: string }> {
+  ensureAppUpdaterConfigured();
+  if (!appUpdater) {
+    void showMemoryStatusBar('error', 'Updater not available.');
+    return { success: false, error: 'Updater not available' };
+  }
+
+  try {
+    // Step 1: Check for updates
+    void showMemoryStatusBar('processing', 'Checking for updates...');
+    const checkStatus = await checkForAppUpdates();
+    if (checkStatus.state === 'not-available') {
+      void showMemoryStatusBar('success', 'Already on latest version.');
+      return { success: true, message: 'Already on latest version', state: checkStatus.state };
+    }
+    if (checkStatus.state === 'error') {
+      void showMemoryStatusBar('error', checkStatus.message || 'Failed to check for updates');
+      return { success: false, error: checkStatus.message || 'Failed to check for updates' };
+    }
+
+    // Step 2: Download if available
+    if (checkStatus.state === 'available') {
+      void showMemoryStatusBar('processing', 'Downloading update...');
+      const downloadStatus = await downloadAppUpdate();
+      if (downloadStatus.state === 'error') {
+        void showMemoryStatusBar('error', downloadStatus.message || 'Failed to download update');
+        return { success: false, error: downloadStatus.message || 'Failed to download update' };
+      }
+    }
+
+    // Step 3: Restart if downloaded
+    if (appUpdaterStatusSnapshot.state === 'downloaded') {
+      void showMemoryStatusBar('processing', 'Restarting to install update...');
+      const installed = await restartAndInstallAppUpdate();
+      if (installed) {
+        return { success: true, message: 'Restarting to install update...', state: 'restarting' };
+      }
+      void showMemoryStatusBar('error', 'Failed to restart for update installation');
+      return { success: false, error: 'Failed to restart for update installation' };
+    }
+
+    void showMemoryStatusBar('success', checkStatus.message || 'Update check complete');
+    return { success: true, message: checkStatus.message || 'Update check complete', state: checkStatus.state };
+  } catch (error: any) {
+    void showMemoryStatusBar('error', String(error?.message || error || 'Update flow failed'));
+    return { success: false, error: String(error?.message || error || 'Update flow failed') };
+  }
+}
+
 // ─── Shortcut Management ────────────────────────────────────────────
 
 function applyOpenAtLogin(enabled: boolean): boolean {
@@ -13357,6 +13795,14 @@ function applyOpenAtLogin(enabled: boolean): boolean {
     console.warn('[LoginItems] Failed to update open-at-login:', error);
     return false;
   }
+}
+
+function setOpenAtLogin(enabled: boolean): boolean {
+  const applied = applyOpenAtLogin(Boolean(enabled));
+  if (applied) {
+    saveSettings({ openAtLogin: Boolean(enabled) } as Partial<AppSettings>);
+  }
+  return applied;
 }
 
 function disableMacSpotlightShortcuts(): boolean {
@@ -14389,52 +14835,7 @@ app.whenReady().then(async () => {
 
   // Full update flow: check → download → restart
   ipcMain.handle('app-updater-check-and-install', async () => {
-    ensureAppUpdaterConfigured();
-    if (!appUpdater) {
-      void showMemoryStatusBar('error', 'Updater not available.');
-      return { success: false, error: 'Updater not available' };
-    }
-
-    try {
-      // Step 1: Check for updates
-      void showMemoryStatusBar('processing', 'Checking for updates...');
-      const checkStatus = await checkForAppUpdates();
-      if (checkStatus.state === 'not-available') {
-        void showMemoryStatusBar('success', 'Already on latest version.');
-        return { success: true, message: 'Already on latest version', state: checkStatus.state };
-      }
-      if (checkStatus.state === 'error') {
-        void showMemoryStatusBar('error', checkStatus.message || 'Failed to check for updates');
-        return { success: false, error: checkStatus.message || 'Failed to check for updates' };
-      }
-
-      // Step 2: Download if available
-      if (checkStatus.state === 'available') {
-        void showMemoryStatusBar('processing', 'Downloading update...');
-        const downloadStatus = await downloadAppUpdate();
-        if (downloadStatus.state === 'error') {
-          void showMemoryStatusBar('error', downloadStatus.message || 'Failed to download update');
-          return { success: false, error: downloadStatus.message || 'Failed to download update' };
-        }
-      }
-
-      // Step 3: Restart if downloaded
-      if (appUpdaterStatusSnapshot.state === 'downloaded') {
-        void showMemoryStatusBar('processing', 'Restarting to install update...');
-        const installed = await restartAndInstallAppUpdate();
-        if (installed) {
-          return { success: true, message: 'Restarting to install update...', state: 'restarting' };
-        }
-        void showMemoryStatusBar('error', 'Failed to restart for update installation');
-        return { success: false, error: 'Failed to restart for update installation' };
-      }
-
-      void showMemoryStatusBar('success', checkStatus.message || 'Update check complete');
-      return { success: true, message: checkStatus.message || 'Update check complete', state: checkStatus.state };
-    } catch (error: any) {
-      void showMemoryStatusBar('error', String(error?.message || error || 'Update flow failed'));
-      return { success: false, error: String(error?.message || error || 'Update flow failed') };
-    }
+    return await runAppUpdaterCheckAndInstall();
   });
 
   function broadcastSettingsToAllWindows(result: AppSettings): void {
@@ -14753,11 +15154,7 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle('set-open-at-login', (_event: any, enabled: boolean) => {
-    const applied = applyOpenAtLogin(Boolean(enabled));
-    if (applied) {
-      saveSettings({ openAtLogin: Boolean(enabled) } as Partial<AppSettings>);
-    }
-    return applied;
+    return setOpenAtLogin(Boolean(enabled));
   });
 
   ipcMain.handle('replace-spotlight-with-supercmd', async () => {

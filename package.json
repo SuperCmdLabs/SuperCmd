@@ -42,8 +42,6 @@
   },
   "dependencies": {
     "@aptabase/electron": "^0.3.1",
-    "@esbuild/darwin-arm64": "0.19.12",
-    "@esbuild/darwin-x64": "0.19.12",
     "@phosphor-icons/react": "^2.1.10",
     "@raycast/api": "^1.104.5",
     "electron-builder-notarize": "^1.5.2",
@@ -56,6 +54,10 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "transliteration": "^2.6.1"
+  },
+  "optionalDependencies": {
+    "@esbuild/darwin-arm64": "0.19.12",
+    "@esbuild/darwin-x64": "0.19.12"
   },
   "build": {
     "appId": "com.supercmd.app",
