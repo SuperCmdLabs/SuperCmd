@@ -76,6 +76,8 @@
       "node_modules/@esbuild/**",
       "node_modules/node-edge-tts/**",
       "node_modules/node-window-manager/**",
+      "node_modules/extract-file-icon/**",
+      "node_modules/node-gyp-build/**",
       "node_modules/electron-liquid-glass/**"
     ],
     "files": [

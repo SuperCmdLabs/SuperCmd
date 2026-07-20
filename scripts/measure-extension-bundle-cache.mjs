@@ -229,8 +229,7 @@ async function main() {
 
     const menuBar = await measure('repeated-menu-bar-background-prep', fixture.extDir, async () => {
       for (let i = 0; i < iterations; i++) {
-        const commands = runner
-          .discoverInstalledExtensionCommands()
+        const commands = (await runner.discoverInstalledExtensionCommands())
           .filter((command) => command.mode === 'menu-bar');
         assert.equal(commands.length, 1);
         const bundle = await runner.getExtensionBundle(commands[0].extName, commands[0].cmdName);

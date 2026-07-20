@@ -129,19 +129,21 @@ function getCommandsDiskCachePath(): string {
   return commandsDiskCachePath;
 }
 
-function loadCommandsDiskCache(): CommandInfo[] | null {
+async function loadCommandsDiskCache(): Promise<CommandInfo[] | null> {
   try {
-    const raw = fs.readFileSync(getCommandsDiskCachePath(), 'utf-8');
+    const raw = await fs.promises.readFile(getCommandsDiskCachePath(), 'utf-8');
     const parsed = JSON.parse(raw) as { version: number; commands: CommandInfo[] };
     if (parsed?.version !== COMMANDS_DISK_CACHE_VERSION) return null;
     const cmds = parsed.commands;
-    // Re-attach icons from the per-app icon disk cache (fast file reads).
-    for (const cmd of cmds) {
-      if (cmd.path) {
-        const icon = getCachedIcon(cmd.path);
-        if (icon) cmd.iconDataUrl = icon;
-      }
-    }
+    // Re-attach icons from the per-app icon disk cache. Reading them
+    // concurrently (fs.promises, backed by libuv's threadpool) instead of one
+    // fs.readFileSync per command avoids serializing every icon read on the
+    // main thread right before the first window is created.
+    await Promise.all(cmds.map(async (cmd) => {
+      if (!cmd.path) return;
+      const icon = await getCachedIconAsync(cmd.path);
+      if (icon) cmd.iconDataUrl = icon;
+    }));
     return cmds;
   } catch {
     return null;
@@ -163,8 +165,8 @@ function saveCommandsDiskCache(commands: CommandInfo[]): void {
 }
 
 /** Call once after app.whenReady() to pre-populate the in-memory cache from disk. */
-export function initCommandsCache(): void {
-  const cmds = loadCommandsDiskCache();
+export async function initCommandsCache(): Promise<void> {
+  const cmds = await loadCommandsDiskCache();
   if (cmds) {
     cachedCommands = cmds;
     staleCommandsFallback = cmds;
@@ -205,6 +207,15 @@ function getCachedIcon(bundlePath: string): string | undefined {
     }
   } catch {}
   return undefined;
+}
+
+async function getCachedIconAsync(bundlePath: string): Promise<string | undefined> {
+  try {
+    const cacheFile = path.join(getIconCacheDir(), `${iconCacheKey(bundlePath)}.b64`);
+    return await fs.promises.readFile(cacheFile, 'utf-8');
+  } catch {
+    return undefined;
+  }
 }
 
 function setCachedIcon(bundlePath: string, dataUrl: string): void {
@@ -1849,7 +1860,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   // Installed community extensions
   let extensionCommands: CommandInfo[] = [];
   try {
-    extensionCommands = discoverInstalledExtensionCommands().map((ext) => ({
+    extensionCommands = (await discoverInstalledExtensionCommands()).map((ext) => ({
       id: ext.id,
       title: ext.title,
       subtitle: ext.extensionTitle,

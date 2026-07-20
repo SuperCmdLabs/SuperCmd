@@ -144,9 +144,53 @@ interface CachedTextFile {
   value: string;
 }
 
+/**
+ * Map-backed LRU cache with a hard size cap. Reads move the key to the
+ * most-recently-used position; inserts past the cap evict the oldest entry.
+ * Keeps long sessions that open many distinct extensions from accumulating
+ * unbounded bundle/manifest text in memory.
+ */
+class LruCache<K, V> {
+  private readonly map = new Map<K, V>();
+
+  constructor(private readonly maxEntries: number) {}
+
+  get(key: K): V | undefined {
+    const value = this.map.get(key);
+    if (value === undefined) return undefined;
+    this.map.delete(key);
+    this.map.set(key, value);
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    this.map.delete(key);
+    this.map.set(key, value);
+    if (this.map.size > this.maxEntries) {
+      const oldestKey = this.map.keys().next().value as K;
+      this.map.delete(oldestKey);
+    }
+  }
+
+  delete(key: K): void {
+    this.map.delete(key);
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  keys(): IterableIterator<K> {
+    return this.map.keys();
+  }
+}
+
+const MAX_EXTENSION_MANIFEST_CACHE_ENTRIES = 200;
+const MAX_EXTENSION_BUNDLE_CACHE_ENTRIES = 40;
+
 let _installedExtensionsSnapshot: InstalledExtensionsSnapshot | null = null;
-const _extensionManifestCache = new Map<string, CachedManifest>();
-const _extensionBundleCodeCache = new Map<string, CachedTextFile>();
+const _extensionManifestCache = new LruCache<string, CachedManifest>(MAX_EXTENSION_MANIFEST_CACHE_ENTRIES);
+const _extensionBundleCodeCache = new LruCache<string, CachedTextFile>(MAX_EXTENSION_BUNDLE_CACHE_ENTRIES);
 
 function getManagedExtensionsDir(): string {
   const dir = path.join(app.getPath('userData'), 'extensions');
@@ -497,13 +541,24 @@ function normalizePreferenceSchema(pref: any, scope: 'extension' | 'command'): E
 
 // ─── Discovery ──────────────────────────────────────────────────────
 
+const DISCOVERY_YIELD_EVERY_N_EXTENSIONS = 5;
+
 /**
  * Scan installed extensions directory and return a flat list of
  * commands that should appear in the launcher.
+ *
+ * Yields back to the event loop every few extensions so a large install
+ * (many manifests + icon reads, all sync fs calls) doesn't monopolize the
+ * single main-process thread for the whole scan in one uninterrupted burst.
  */
-export function discoverInstalledExtensionCommands(): ExtensionCommandInfo[] {
+export async function discoverInstalledExtensionCommands(): Promise<ExtensionCommandInfo[]> {
   const results: ExtensionCommandInfo[] = [];
-  for (const source of collectInstalledExtensions()) {
+  const sources = collectInstalledExtensions();
+  for (let i = 0; i < sources.length; i++) {
+    if (i > 0 && i % DISCOVERY_YIELD_EVERY_N_EXTENSIONS === 0) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const source = sources[i];
     const extPath = source.extPath;
     const extName = source.extName;
 
@@ -1256,7 +1311,9 @@ export async function buildSingleCommand(extName: string, cmdName: string): Prom
       extPath,
       `${extName}/${cmdName}`
     );
-    return fs.existsSync(outFile);
+    const built = fs.existsSync(outFile);
+    if (built) lastBuildError.delete(`${extName}/${cmdName}`);
+    return built;
   } catch (e: any) {
     console.error(`  On-demand esbuild failed for ${extName}/${cmdName}:`, e);
     lastBuildError.set(`${extName}/${cmdName}`, e?.message || String(e));
