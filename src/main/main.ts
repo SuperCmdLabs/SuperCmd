@@ -14,6 +14,35 @@
 process.stdout?.on?.('error', () => {});
 process.stderr?.on?.('error', () => {});
 
+// Raise V8's old-space ceiling for THIS process (the main/browser process's
+// own embedded Node runtime) by re-exec'ing with the flag directly on argv.
+// Two other approaches were tried and confirmed NOT to work for this specific
+// process: app.commandLine.appendSwitch('js-flags', ...) only reaches
+// Chromium-managed renderer processes (a real crash at the heap ceiling
+// recurred with it in place), and v8.setFlagsFromString() cannot change
+// memory-layout flags after the isolate has already been created (verified
+// empirically — heap_size_limit is unchanged before/after the call). Passing
+// --js-flags on the actual argv of a fresh process is the one mechanism
+// Electron honors for its own main-process V8 instance.
+if (!process.env.SC_HEAP_REEXECED) {
+  try {
+    const { spawn } = require('child_process');
+    const child = spawn(
+      process.execPath,
+      ['--js-flags=--max-old-space-size=4096', ...process.argv.slice(1)],
+      { stdio: 'inherit', detached: true, env: { ...process.env, SC_HEAP_REEXECED: '1' } }
+    );
+    child.unref();
+    process.exit(0);
+  } catch (error) {
+    console.warn('[HeapDebug] Failed to re-exec with raised V8 old-space limit:', error);
+  }
+}
+try {
+  const limitMb = Math.round(require('v8').getHeapStatistics().heap_size_limit / 1048576);
+  console.log(`[HeapDebug] V8 old-space limit for this process: ~${limitMb}MB`);
+} catch {}
+
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -257,6 +286,43 @@ type ParakeetModelStatus = {
 let parakeetModelStatus: ParakeetModelStatus | null = null;
 let parakeetModelEnsurePromise: Promise<string> | null = null;
 
+// Persistent transcription servers (parakeet/qwen3/whisper.cpp) keep a model
+// loaded in memory for fast repeat use, but otherwise sit idle for the rest
+// of the session once used once. Auto-kill them after a period of no use so
+// they don't hold their memory footprint until the app quits.
+const AI_TRANSCRIPTION_SERVER_IDLE_SHUTDOWN_MS = 10 * 60_000; // 10 minutes
+
+// `isBusy` guards against killing a server mid-request: ensureXServer() bumps
+// the timer once, up front, before the caller has even sent its request — for
+// a transcription that runs longer than idleMs (long audio, slow hardware),
+// nothing re-bumps the timer while it's in flight. Without this guard the
+// timer would fire and kill a server that's actively working, not idle.
+function createIdleShutdownScheduler(
+  killFn: () => void,
+  idleMs: number,
+  isBusy: () => boolean
+): { bump: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleCheck = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      if (isBusy()) {
+        // Still working — defer the kill and check again after another
+        // idle window rather than shutting down a busy server.
+        scheduleCheck();
+        return;
+      }
+      killFn();
+    }, idleMs);
+  };
+  return {
+    bump(): void {
+      scheduleCheck();
+    },
+  };
+}
+
 // Persistent serve-mode process for fast transcription (models stay loaded in memory)
 let parakeetServerProcess: any = null; // ChildProcess
 let parakeetServerReady = false;
@@ -264,6 +330,11 @@ let parakeetServerStarting: Promise<void> | null = null;
 let parakeetServerBuffer = '';
 type PendingParakeetRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let parakeetPendingRequest: PendingParakeetRequest | null = null;
+const parakeetIdleShutdown = createIdleShutdownScheduler(
+  () => killParakeetServer(),
+  AI_TRANSCRIPTION_SERVER_IDLE_SHUTDOWN_MS,
+  () => parakeetPendingRequest !== null
+);
 
 function killParakeetServer(): void {
   if (parakeetServerProcess) {
@@ -283,6 +354,7 @@ function killParakeetServer(): void {
 }
 
 function ensureParakeetServer(): Promise<void> {
+  parakeetIdleShutdown.bump();
   if (parakeetServerReady && parakeetServerProcess && !parakeetServerProcess.killed) {
     return Promise.resolve();
   }
@@ -619,6 +691,11 @@ let qwen3ServerStarting: Promise<void> | null = null;
 let qwen3ServerBuffer = '';
 type PendingQwen3Request = { resolve: (json: any) => void; reject: (err: Error) => void };
 let qwen3PendingRequest: PendingQwen3Request | null = null;
+const qwen3IdleShutdown = createIdleShutdownScheduler(
+  () => killQwen3Server(),
+  AI_TRANSCRIPTION_SERVER_IDLE_SHUTDOWN_MS,
+  () => qwen3PendingRequest !== null
+);
 
 function killQwen3Server(): void {
   if (qwen3ServerProcess) {
@@ -638,6 +715,7 @@ function killQwen3Server(): void {
 }
 
 function ensureQwen3Server(): Promise<void> {
+  qwen3IdleShutdown.bump();
   if (qwen3ServerReady && qwen3ServerProcess && !qwen3ServerProcess.killed) {
     return Promise.resolve();
   }
@@ -1153,6 +1231,11 @@ let whisperCppServerStarting: Promise<void> | null = null;
 let whisperCppServerBuffer = '';
 type PendingWhisperCppRequest = { resolve: (json: any) => void; reject: (err: Error) => void };
 let whisperCppPendingRequest: PendingWhisperCppRequest | null = null;
+const whisperCppIdleShutdown = createIdleShutdownScheduler(
+  () => killWhisperCppServer(),
+  AI_TRANSCRIPTION_SERVER_IDLE_SHUTDOWN_MS,
+  () => whisperCppPendingRequest !== null
+);
 
 function killWhisperCppServer(): void {
   if (whisperCppServerProcess) {
@@ -1172,6 +1255,7 @@ function killWhisperCppServer(): void {
 }
 
 function ensureWhisperCppServer(): Promise<void> {
+  whisperCppIdleShutdown.bump();
   if (whisperCppServerReady && whisperCppServerProcess && !whisperCppServerProcess.killed) {
     return Promise.resolve();
   }
@@ -1685,6 +1769,23 @@ const windowManagerWorkerPending = new Map<number, {
   timer: ReturnType<typeof setTimeout>;
 }>();
 
+// ─── Graceful shutdown: drain in-flight extension/script work ───────
+// Extension bundling (esbuild + fs) and script command execution
+// (child_process) run real Node async work on the main process. If one of
+// those callbacks completes after Electron starts tearing down the V8/Node
+// environment on quit, Node has been observed to abort natively
+// (EXC_BREAKPOINT/SIGTRAP) instead of throwing a catchable JS error. Track
+// this work so before-quit can wait for it to settle first.
+const EXTENSION_WORK_QUIT_DRAIN_TIMEOUT_MS = 2000;
+const inFlightExtensionWork = new Set<Promise<unknown>>();
+
+function trackInFlightExtensionWork<T>(promise: Promise<T>): Promise<T> {
+  inFlightExtensionWork.add(promise);
+  const untrack = () => { inFlightExtensionWork.delete(promise); };
+  promise.then(untrack, untrack);
+  return promise;
+}
+
 function parseMajorVersion(value: string | undefined): number | null {
   if (!value) return null;
   const major = Number.parseInt(String(value).split('.')[0], 10);
@@ -1741,6 +1842,13 @@ function scheduleWindowManagerWorkerRestart(): void {
 }
 
 function attachWindowManagerWorkerListeners(proc: ChildProcess): void {
+  proc.stdout?.on('data', (chunk) => {
+    console.log(`[WindowManagerWorker] ${String(chunk).trimEnd()}`);
+  });
+  proc.stderr?.on('data', (chunk) => {
+    console.error(`[WindowManagerWorker] ${String(chunk).trimEnd()}`);
+  });
+
   proc.on('message', (message: WindowManagerWorkerResponse) => {
     if (!message || typeof message !== 'object') return;
     const pending = windowManagerWorkerPending.get(Number(message.id));
@@ -1776,7 +1884,7 @@ function ensureWindowManagerWorker(): ChildProcess | null {
   try {
     const workerPath = getWindowManagerWorkerPath();
     const proc = fork(workerPath, [], {
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       execArgv: [],
     });
     windowManagerWorker = proc;
@@ -2481,8 +2589,6 @@ let memoryStatusHideTimer: NodeJS.Timeout | null = null;
 let memoryStatusFadeFinalizeTimer: NodeJS.Timeout | null = null;
 let memoryStatusRenderSeq = 0;
 let memoryStatusHideTimerSeq = 0;
-let confettiWindow: InstanceType<typeof BrowserWindow> | null = null;
-let confettiCloseTimer: NodeJS.Timeout | null = null;
 let settingsWindow: InstanceType<typeof BrowserWindow> | null = null;
 let extensionStoreWindow: InstanceType<typeof BrowserWindow> | null = null;
 let notesWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -2841,24 +2947,25 @@ function getConfettiWindowHtml(): string {
 
       const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585', '#b8f2e6', '#ffffff'];
       const particles = [];
-      // Two bursts from lower-left and lower-right, plus a center shower
+      // Two wide bursts from the bottom corners, plus a center shower, sized
+      // to cover most of the screen rather than three small isolated clumps.
       const bursts = [
-        { x: canvas.width * 0.15, y: canvas.height * 0.85, angle: -Math.PI * 0.30, spread: 0.9 },
-        { x: canvas.width * 0.85, y: canvas.height * 0.85, angle: -Math.PI * 0.70, spread: 0.9 },
-        { x: canvas.width * 0.50, y: canvas.height * 0.55, angle: -Math.PI * 0.50, spread: 1.1 },
+        { x: canvas.width * 0.06, y: canvas.height * 0.95, angle: -Math.PI * 0.28, spread: 1.0 },
+        { x: canvas.width * 0.94, y: canvas.height * 0.95, angle: -Math.PI * 0.72, spread: 1.0 },
+        { x: canvas.width * 0.50, y: canvas.height * 0.55, angle: -Math.PI * 0.50, spread: 1.3 },
       ];
-      const gravity = 0.32 * dpr;
+      const gravity = 0.28 * dpr;
       for (const b of bursts) {
-        const count = 110;
+        const count = 220;
         for (let i = 0; i < count; i++) {
           const a = b.angle + (Math.random() - 0.5) * b.spread;
-          const speed = (9 + Math.random() * 12) * dpr;
+          const speed = (14 + Math.random() * 22) * dpr;
           particles.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * speed,
             vy: Math.sin(a) * speed,
-            size: (4 + Math.random() * 7) * dpr,
+            size: (6 + Math.random() * 10) * dpr,
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
             rot: Math.random() * Math.PI * 2,
             rotSpeed: (Math.random() - 0.5) * 0.3,
@@ -2866,7 +2973,7 @@ function getConfettiWindowHtml(): string {
         }
       }
 
-      const durationMs = 1800;
+      const durationMs = 2400;
       const start = performance.now();
       function tick(now) {
         const elapsed = now - start;
@@ -2876,7 +2983,7 @@ function getConfettiWindowHtml(): string {
           p.x += p.vx;
           p.y += p.vy;
           p.vy += gravity;
-          p.vx *= 0.993;
+          p.vx *= 0.996;
           p.rot += p.rotSpeed;
           ctx.save();
           ctx.translate(p.x, p.y);
@@ -2899,24 +3006,139 @@ function getConfettiWindowHtml(): string {
 </html>`;
 }
 
-function closeConfettiWindow(): void {
-  if (confettiCloseTimer) {
-    clearTimeout(confettiCloseTimer);
-    confettiCloseTimer = null;
-  }
-  if (confettiWindow && !confettiWindow.isDestroyed()) {
-    try { confettiWindow.close(); } catch {}
-  }
-  confettiWindow = null;
+function getFireworksWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const SHELL_COLORS = ['#ff4d6d', '#ffd166', '#4cc9f0', '#06d6a0', '#f72585', '#c77dff'];
+
+      // Each shell launches from the bottom on its own delay, climbs to an
+      // apex leaving a fading trail, then explodes into a radial shower.
+      const shells = [0, 1, 2, 3, 4].map((i) => {
+        const launchX = canvas.width * (0.18 + Math.random() * 0.64);
+        const apexY = canvas.height * (0.18 + Math.random() * 0.24);
+        return {
+          launchDelay: i * 480 + Math.random() * 200,
+          x: launchX,
+          y: canvas.height,
+          apexY,
+          vy: -(11 + Math.random() * 2.5) * dpr,
+          color: SHELL_COLORS[Math.floor(Math.random() * SHELL_COLORS.length)],
+          trail: [],
+          exploded: false,
+          launched: false,
+        };
+      });
+
+      const explosionParticles = [];
+      const gravity = 0.12 * dpr;
+
+      function explode(shell) {
+        shell.exploded = true;
+        const count = 90;
+        for (let i = 0; i < count; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const speed = (3 + Math.random() * 7) * dpr;
+          const useSparkle = Math.random() < 0.25;
+          explosionParticles.push({
+            x: shell.x,
+            y: shell.y,
+            vx: Math.cos(a) * speed,
+            vy: Math.sin(a) * speed,
+            size: (useSparkle ? 2 + Math.random() * 2 : 3 + Math.random() * 3) * dpr,
+            color: useSparkle ? '#ffffff' : shell.color,
+            life: 1,
+            decay: 0.012 + Math.random() * 0.01,
+          });
+        }
+      }
+
+      const durationMs = 4200;
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (const shell of shells) {
+          if (shell.exploded || elapsed < shell.launchDelay) continue;
+          shell.launched = true;
+          shell.trail.push({ x: shell.x, y: shell.y });
+          if (shell.trail.length > 10) shell.trail.shift();
+          shell.y += shell.vy;
+          shell.vy += gravity * 0.5;
+          if (shell.y <= shell.apexY || shell.vy >= -0.5 * dpr) {
+            explode(shell);
+            continue;
+          }
+          for (let i = 0; i < shell.trail.length; i++) {
+            const t = shell.trail[i];
+            ctx.globalAlpha = (i + 1) / shell.trail.length * 0.7;
+            ctx.fillStyle = shell.color;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, 1.6 * dpr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+          const p = explosionParticles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += gravity;
+          p.vx *= 0.98;
+          p.life -= p.decay;
+          if (p.life <= 0) {
+            explosionParticles.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
 }
 
-async function showConfettiBurst(): Promise<void> {
+async function showFullScreenOverlayEffect(html: string, durationMs: number, label: string): Promise<void> {
+  let win: InstanceType<typeof BrowserWindow> | null = null;
   try {
-    closeConfettiWindow();
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor) || screen.getPrimaryDisplay();
     const { x, y, width, height } = display.bounds;
-    confettiWindow = new BrowserWindow({
+    win = new BrowserWindow({
       x,
       y,
       width,
@@ -2940,28 +3162,251 @@ async function showConfettiBurst(): Promise<void> {
         sandbox: true,
       },
     });
-    disableWindowAnimation(confettiWindow);
-    try { confettiWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
-    try { confettiWindow.setIgnoreMouseEvents(true, { forward: true }); } catch {}
-    try { confettiWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
-    const win = confettiWindow;
-    win.on('closed', () => {
-      if (confettiWindow === win) confettiWindow = null;
-    });
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getConfettiWindowHtml())}`);
-    if (win.isDestroyed()) return;
+    disableWindowAnimation(win);
+    try { win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+    try { win.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+    try { win.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+    const thisWin = win;
+    await thisWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    if (thisWin.isDestroyed()) return;
     try {
-      if (typeof (win as any).showInactive === 'function') (win as any).showInactive();
-      else win.show();
+      if (typeof (thisWin as any).showInactive === 'function') (thisWin as any).showInactive();
+      else thisWin.show();
     } catch {}
-    confettiCloseTimer = setTimeout(() => {
-      confettiCloseTimer = null;
-      closeConfettiWindow();
-    }, 2200);
+    setTimeout(() => {
+      if (!thisWin.isDestroyed()) {
+        try { thisWin.close(); } catch {}
+      }
+    }, durationMs);
   } catch (error) {
-    console.warn('[Confetti] Failed to show confetti burst:', error);
-    closeConfettiWindow();
+    console.warn(`[${label}] Failed to show overlay effect:`, error);
+    if (win && !win.isDestroyed()) {
+      try { win.close(); } catch {}
+    }
   }
+}
+
+function getSnowWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const durationMs = 7000;
+      const fadeOutStart = durationMs - 900;
+      // Density scales with screen area so it looks equally thick on any display.
+      const targetCount = Math.max(220, Math.min(550, Math.round((w * h) / 6000)));
+      const flakes = [];
+
+      function spawnFlake(atRandomY) {
+        const size = (1.5 + Math.random() * 3.2) * dpr;
+        flakes.push({
+          x: Math.random() * canvas.width,
+          y: atRandomY ? Math.random() * canvas.height : -size * 2,
+          size,
+          speed: (0.7 + Math.random() * 1.6) * dpr * (size / (3 * dpr)),
+          swayPhase: Math.random() * Math.PI * 2,
+          swaySpeed: 0.015 + Math.random() * 0.02,
+          swayAmp: (0.6 + Math.random() * 1.4) * dpr,
+          opacity: 0.45 + Math.random() * 0.5,
+        });
+      }
+      for (let i = 0; i < targetCount; i++) spawnFlake(true);
+
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const stillSpawning = elapsed < fadeOutStart;
+        const fadeMul = elapsed > fadeOutStart
+          ? Math.max(0, 1 - (elapsed - fadeOutStart) / (durationMs - fadeOutStart))
+          : 1;
+
+        for (let i = flakes.length - 1; i >= 0; i--) {
+          const f = flakes[i];
+          f.swayPhase += f.swaySpeed;
+          f.y += f.speed;
+          f.x += Math.sin(f.swayPhase) * f.swayAmp * 0.05;
+          if (f.y > canvas.height + f.size * 2) {
+            if (stillSpawning) {
+              f.y = -f.size * 2;
+              f.x = Math.random() * canvas.width;
+            } else {
+              flakes.splice(i, 1);
+              continue;
+            }
+          }
+          ctx.globalAlpha = f.opacity * fadeMul;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs && flakes.length > 0) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+function getRainWindowHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const durationMs = 7000;
+      const fadeOutStart = durationMs - 900;
+      const targetCount = Math.max(260, Math.min(600, Math.round((w * h) / 5200)));
+      const windAngle = Math.PI * 0.44; // slight lean, mostly downward
+      const drops = [];
+      const splashes = [];
+      const groundY = canvas.height * 0.985;
+
+      function spawnDrop(atRandomY) {
+        const length = (14 + Math.random() * 16) * dpr;
+        const speed = (16 + Math.random() * 14) * dpr;
+        drops.push({
+          x: Math.random() * (canvas.width + canvas.height) - canvas.height * 0.5,
+          y: atRandomY ? Math.random() * canvas.height : -length,
+          length,
+          speed,
+          opacity: 0.25 + Math.random() * 0.35,
+        });
+      }
+      for (let i = 0; i < targetCount; i++) spawnDrop(true);
+
+      const start = performance.now();
+      function tick(now) {
+        const elapsed = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const stillSpawning = elapsed < fadeOutStart;
+        const fadeMul = elapsed > fadeOutStart
+          ? Math.max(0, 1 - (elapsed - fadeOutStart) / (durationMs - fadeOutStart))
+          : 1;
+        const dx = Math.cos(windAngle);
+        const dy = Math.sin(windAngle);
+
+        ctx.lineWidth = 1.4 * dpr;
+        ctx.lineCap = 'round';
+        for (let i = drops.length - 1; i >= 0; i--) {
+          const d = drops[i];
+          d.x += dx * d.speed;
+          d.y += dy * d.speed;
+          if (d.y > groundY) {
+            if (splashes.length < 60 && stillSpawning) {
+              splashes.push({ x: d.x, y: groundY, r: 0, life: 1 });
+            }
+            if (stillSpawning) {
+              d.y = -d.length;
+              d.x = Math.random() * (canvas.width + canvas.height) - canvas.height * 0.5;
+              continue;
+            }
+            drops.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = d.opacity * fadeMul;
+          ctx.strokeStyle = '#cbe3ff';
+          ctx.beginPath();
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d.x - dx * d.length, d.y - dy * d.length);
+          ctx.stroke();
+        }
+
+        for (let i = splashes.length - 1; i >= 0; i--) {
+          const s = splashes[i];
+          s.r += 0.9 * dpr;
+          s.life -= 0.07;
+          if (s.life <= 0) {
+            splashes.splice(i, 1);
+            continue;
+          }
+          ctx.globalAlpha = Math.max(0, s.life) * 0.5 * fadeMul;
+          ctx.strokeStyle = '#cbe3ff';
+          ctx.lineWidth = 1 * dpr;
+          ctx.beginPath();
+          ctx.ellipse(s.x, s.y, s.r * 1.6, s.r * 0.5, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        if (elapsed < durationMs && (drops.length > 0 || splashes.length > 0)) {
+          requestAnimationFrame(tick);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+// Each burst gets its own overlay window rather than replacing a previous
+// one — firing the command again while a burst is still animating layers a
+// new one on top, matching Raycast's behavior instead of wiping the screen
+// clean first.
+async function showConfettiBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getConfettiWindowHtml(), 2800, 'Confetti');
+}
+
+async function showFireworksBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getFireworksWindowHtml(), 4500, 'Fireworks');
+}
+
+async function showSnowBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getSnowWindowHtml(), 7000, 'Snow');
+}
+
+async function showRainBurst(): Promise<void> {
+  await showFullScreenOverlayEffect(getRainWindowHtml(), 7000, 'Rain');
 }
 
 type AppUpdaterState =
@@ -7494,6 +7939,34 @@ function ensureAppTray(): void {
         },
         { type: 'separator' },
         {
+          label: 'Extension Store...',
+          click: () => {
+            openExtensionStoreWindow();
+          },
+        },
+        {
+          label: 'SuperCmd Settings...',
+          click: () => {
+            openSettingsWindow();
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Launch at Login',
+          type: 'checkbox',
+          checked: Boolean((loadSettings() as any).openAtLogin),
+          click: (menuItem: any) => {
+            setOpenAtLogin(menuItem.checked);
+          },
+        },
+        {
+          label: 'Check for Updates...',
+          click: () => {
+            void runAppUpdaterCheckAndInstall();
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Quit SuperCmd',
           click: () => {
             app.quit();
@@ -7868,7 +8341,7 @@ async function buildLaunchBundle(options: {
     sourceExtensionName,
     sourcePreferences,
   } = options;
-  const result = await getExtensionBundle(extensionName, commandName);
+  const result = await trackInFlightExtensionWork(getExtensionBundle(extensionName, commandName));
   if (!result) {
     throw new Error(`Command "${commandName}" not found in extension "${extensionName}"`);
   }
@@ -10868,6 +11341,30 @@ async function runCommandById(commandId: string, source: 'launcher' | 'hotkey' |
     return true;
   }
 
+  if (commandId === 'system-confetti') {
+    if (source === 'launcher') hideWindow();
+    void showConfettiBurst();
+    return true;
+  }
+
+  if (commandId === 'system-fireworks') {
+    if (source === 'launcher') hideWindow();
+    void showFireworksBurst();
+    return true;
+  }
+
+  if (commandId === 'system-snow') {
+    if (source === 'launcher') hideWindow();
+    void showSnowBurst();
+    return true;
+  }
+
+  if (commandId === 'system-rain') {
+    if (source === 'launcher') hideWindow();
+    void showRainBurst();
+    return true;
+  }
+
   if (commandId === 'system-reset-launcher-position') {
     clearWindowState();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -13344,6 +13841,55 @@ async function restartAndInstallAppUpdate(): Promise<boolean> {
   return appUpdaterRestartPromise;
 }
 
+async function runAppUpdaterCheckAndInstall(): Promise<{ success: boolean; error?: string; message?: string; state?: string }> {
+  ensureAppUpdaterConfigured();
+  if (!appUpdater) {
+    void showMemoryStatusBar('error', 'Updater not available.');
+    return { success: false, error: 'Updater not available' };
+  }
+
+  try {
+    // Step 1: Check for updates
+    void showMemoryStatusBar('processing', 'Checking for updates...');
+    const checkStatus = await checkForAppUpdates();
+    if (checkStatus.state === 'not-available') {
+      void showMemoryStatusBar('success', 'Already on latest version.');
+      return { success: true, message: 'Already on latest version', state: checkStatus.state };
+    }
+    if (checkStatus.state === 'error') {
+      void showMemoryStatusBar('error', checkStatus.message || 'Failed to check for updates');
+      return { success: false, error: checkStatus.message || 'Failed to check for updates' };
+    }
+
+    // Step 2: Download if available
+    if (checkStatus.state === 'available') {
+      void showMemoryStatusBar('processing', 'Downloading update...');
+      const downloadStatus = await downloadAppUpdate();
+      if (downloadStatus.state === 'error') {
+        void showMemoryStatusBar('error', downloadStatus.message || 'Failed to download update');
+        return { success: false, error: downloadStatus.message || 'Failed to download update' };
+      }
+    }
+
+    // Step 3: Restart if downloaded
+    if (appUpdaterStatusSnapshot.state === 'downloaded') {
+      void showMemoryStatusBar('processing', 'Restarting to install update...');
+      const installed = await restartAndInstallAppUpdate();
+      if (installed) {
+        return { success: true, message: 'Restarting to install update...', state: 'restarting' };
+      }
+      void showMemoryStatusBar('error', 'Failed to restart for update installation');
+      return { success: false, error: 'Failed to restart for update installation' };
+    }
+
+    void showMemoryStatusBar('success', checkStatus.message || 'Update check complete');
+    return { success: true, message: checkStatus.message || 'Update check complete', state: checkStatus.state };
+  } catch (error: any) {
+    void showMemoryStatusBar('error', String(error?.message || error || 'Update flow failed'));
+    return { success: false, error: String(error?.message || error || 'Update flow failed') };
+  }
+}
+
 // ─── Shortcut Management ────────────────────────────────────────────
 
 function applyOpenAtLogin(enabled: boolean): boolean {
@@ -13357,6 +13903,14 @@ function applyOpenAtLogin(enabled: boolean): boolean {
     console.warn('[LoginItems] Failed to update open-at-login:', error);
     return false;
   }
+}
+
+function setOpenAtLogin(enabled: boolean): boolean {
+  const applied = applyOpenAtLogin(Boolean(enabled));
+  if (applied) {
+    saveSettings({ openAtLogin: Boolean(enabled) } as Partial<AppSettings>);
+  }
+  return applied;
 }
 
 function disableMacSpotlightShortcuts(): boolean {
@@ -13522,6 +14076,50 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
   syncHyperKeyMonitor();
 }
 
+// Opt-in diagnostics for the main-process JS heap. Enabled only when
+// SC_HEAP_DEBUG=1 is set, so it never runs for regular users — set it when
+// reproducing a long-session OOM to see whether the main process heap grows
+// unbounded and to capture a snapshot for retainer analysis.
+function writeHeapDebugSnapshot(): void {
+  try {
+    const v8 = require('v8');
+    // /tmp instead of app.getPath('logs') — the logs dir has been observed to
+    // get swept by unrelated cleanup, losing snapshots minutes after capture.
+    const outDir = path.join(require('os').tmpdir(), 'supercmd-heap-snapshots');
+    fs.mkdirSync(outDir, { recursive: true });
+    const outFile = path.join(outDir, `main-${Date.now()}.heapsnapshot`);
+    v8.writeHeapSnapshot(outFile);
+    console.log(`[HeapDebug] Wrote heap snapshot to ${outFile}`);
+  } catch (error) {
+    console.warn('[HeapDebug] Failed to write heap snapshot:', error);
+  }
+}
+
+function setupHeapDebugInstrumentation(): void {
+  if (process.env.SC_HEAP_DEBUG !== '1') return;
+
+  const HEAP_LOG_INTERVAL_MS = 5 * 60 * 1000;
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    console.log(
+      `[HeapDebug] rss=${(mem.rss / 1048576).toFixed(1)}MB heapUsed=${(mem.heapUsed / 1048576).toFixed(1)}MB heapTotal=${(mem.heapTotal / 1048576).toFixed(1)}MB external=${(mem.external / 1048576).toFixed(1)}MB`
+    );
+  }, HEAP_LOG_INTERVAL_MS).unref();
+
+  // Signal-triggered capture — lets us snapshot from a script/terminal without
+  // needing the app focused or a physical keypress.
+  process.on('SIGUSR2', writeHeapDebugSnapshot);
+
+  try {
+    const success = globalShortcut.register('CommandOrControl+Alt+Shift+H', writeHeapDebugSnapshot);
+    if (!success) {
+      console.warn('[HeapDebug] Failed to register heap snapshot shortcut');
+    }
+  } catch (error) {
+    console.warn('[HeapDebug] Error registering heap snapshot shortcut:', error);
+  }
+}
+
 function registerDevToolsShortcut(): void {
   try {
     unregisterShortcutVariants(DEVTOOLS_SHORTCUT);
@@ -13562,7 +14160,7 @@ async function rebuildExtensions() {
       // This ensures we always have fresh builds on startup.
       console.log(`Rebuilding extension: ${name}`);
       try {
-        await buildAllCommands(name);
+        await trackInFlightExtensionWork(buildAllCommands(name));
       } catch (e) {
         console.error(`Failed to rebuild ${name}:`, e);
       }
@@ -13605,8 +14203,9 @@ app.whenReady().then(async () => {
   trackEvent("app_started");
   app.setAsDefaultProtocolClient('supercmd');
   scrubInternalClipboardProbe('app startup');
-  // Warm the worker so the first window-management action does not race spawn.
-  setTimeout(() => { ensureWindowManagerWorker(); }, 0);
+  // Worker is forked lazily by callWindowManagerWorker() on first actual use
+  // (ensureWindowManagerWorker() inside sendAttempt) — most sessions never
+  // touch window management, so we no longer pre-warm it at startup.
 
   // Some external image hosts (e.g. libgen.bz, libgen.li, libgen.is) only
   // serve covers when a Referer header is present — without one they return
@@ -14389,52 +14988,7 @@ app.whenReady().then(async () => {
 
   // Full update flow: check → download → restart
   ipcMain.handle('app-updater-check-and-install', async () => {
-    ensureAppUpdaterConfigured();
-    if (!appUpdater) {
-      void showMemoryStatusBar('error', 'Updater not available.');
-      return { success: false, error: 'Updater not available' };
-    }
-
-    try {
-      // Step 1: Check for updates
-      void showMemoryStatusBar('processing', 'Checking for updates...');
-      const checkStatus = await checkForAppUpdates();
-      if (checkStatus.state === 'not-available') {
-        void showMemoryStatusBar('success', 'Already on latest version.');
-        return { success: true, message: 'Already on latest version', state: checkStatus.state };
-      }
-      if (checkStatus.state === 'error') {
-        void showMemoryStatusBar('error', checkStatus.message || 'Failed to check for updates');
-        return { success: false, error: checkStatus.message || 'Failed to check for updates' };
-      }
-
-      // Step 2: Download if available
-      if (checkStatus.state === 'available') {
-        void showMemoryStatusBar('processing', 'Downloading update...');
-        const downloadStatus = await downloadAppUpdate();
-        if (downloadStatus.state === 'error') {
-          void showMemoryStatusBar('error', downloadStatus.message || 'Failed to download update');
-          return { success: false, error: downloadStatus.message || 'Failed to download update' };
-        }
-      }
-
-      // Step 3: Restart if downloaded
-      if (appUpdaterStatusSnapshot.state === 'downloaded') {
-        void showMemoryStatusBar('processing', 'Restarting to install update...');
-        const installed = await restartAndInstallAppUpdate();
-        if (installed) {
-          return { success: true, message: 'Restarting to install update...', state: 'restarting' };
-        }
-        void showMemoryStatusBar('error', 'Failed to restart for update installation');
-        return { success: false, error: 'Failed to restart for update installation' };
-      }
-
-      void showMemoryStatusBar('success', checkStatus.message || 'Update check complete');
-      return { success: true, message: checkStatus.message || 'Update check complete', state: checkStatus.state };
-    } catch (error: any) {
-      void showMemoryStatusBar('error', String(error?.message || error || 'Update flow failed'));
-      return { success: false, error: String(error?.message || error || 'Update flow failed') };
-    }
+    return await runAppUpdaterCheckAndInstall();
   });
 
   function broadcastSettingsToAllWindows(result: AppSettings): void {
@@ -14753,11 +15307,7 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle('set-open-at-login', (_event: any, enabled: boolean) => {
-    const applied = applyOpenAtLogin(Boolean(enabled));
-    if (applied) {
-      saveSettings({ openAtLogin: Boolean(enabled) } as Partial<AppSettings>);
-    }
-    return applied;
+    return setOpenAtLogin(Boolean(enabled));
   });
 
   ipcMain.handle('replace-spotlight-with-supercmd', async () => {
@@ -15050,7 +15600,7 @@ app.whenReady().then(async () => {
     async (_event: any, extName: string, cmdName: string) => {
       try {
         // Read the pre-built bundle (built at install time), or build on-demand
-        const result = await getExtensionBundle(extName, cmdName);
+        const result = await trackInFlightExtensionWork(getExtensionBundle(extName, cmdName));
         if (!result) {
           return { error: `No pre-built bundle for ${extName}/${cmdName}. Try reinstalling the extension.` };
         }
@@ -15110,7 +15660,7 @@ app.whenReady().then(async () => {
             : {};
         const background = Boolean(payload?.background);
 
-        const executed = await executeScriptCommand(commandId, argumentValues);
+        const executed = await trackInFlightExtensionWork(executeScriptCommand(commandId, argumentValues));
         if ('missingArguments' in executed) {
           return {
             success: false,
@@ -18974,12 +19524,12 @@ if let tiff = image?.tiffRepresentation {
 
   // Get all menu-bar extension bundles so the renderer can run them
   ipcMain.handle('get-menubar-extensions', async () => {
-    const allCmds = discoverInstalledExtensionCommands();
+    const allCmds = await discoverInstalledExtensionCommands();
     const menuBarCmds = allCmds.filter((c) => c.mode === 'menu-bar');
 
     const bundles: any[] = [];
     for (const cmd of menuBarCmds) {
-      const bundle = await getExtensionBundle(cmd.extName, cmd.cmdName);
+      const bundle = await trackInFlightExtensionWork(getExtensionBundle(cmd.extName, cmd.cmdName));
       if (bundle) {
         bundles.push({
           code: bundle.code,
@@ -19251,7 +19801,7 @@ if let tiff = image?.tiffRepresentation {
   // This populates cachedCommands with cacheTimestamp=0 (stale), so the first
   // getAvailableCommands() call serves the disk cache immediately and kicks off
   // a silent background refresh.
-  initCommandsCache();
+  await initCommandsCache();
 
   createWindow();
 
@@ -19269,6 +19819,7 @@ if let tiff = image?.tiffRepresentation {
   registerGlobalShortcut(settings.globalShortcut);
   registerCommandHotkeys(settings.commandHotkeys);
   registerDevToolsShortcut();
+  setupHeapDebugInstrumentation();
 
   // Fallback: when another SuperCmd window gains focus (e.g. Settings),
   // close the launcher in default mode even if a native blur event was missed.
@@ -19343,8 +19894,26 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let hasAttemptedExtensionWorkDrainOnQuit = false;
+
+app.on('before-quit', (event: any) => {
   prepareWindowsForAppQuit();
+  if (hasAttemptedExtensionWorkDrainOnQuit || inFlightExtensionWork.size === 0) return;
+  hasAttemptedExtensionWorkDrainOnQuit = true;
+  event.preventDefault();
+  const pending = Array.from(inFlightExtensionWork);
+  console.log(`[Shutdown] Draining ${pending.length} in-flight extension/script operation(s) before quitting...`);
+  const drained = Promise.allSettled(pending);
+  const timedOut = new Promise<void>((resolve) => setTimeout(resolve, EXTENSION_WORK_QUIT_DRAIN_TIMEOUT_MS));
+  Promise.race([drained, timedOut]).then(() => {
+    if (inFlightExtensionWork.size > 0) {
+      console.warn(
+        `[Shutdown] ${inFlightExtensionWork.size} extension/script operation(s) still pending after ` +
+        `${EXTENSION_WORK_QUIT_DRAIN_TIMEOUT_MS}ms; quitting anyway.`
+      );
+    }
+    app.quit();
+  });
 });
 
 app.on('will-quit', () => {

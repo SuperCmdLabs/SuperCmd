@@ -57,12 +57,16 @@ type IndexSnapshot = {
 
 const SEARCH_TOKEN_SPLIT_REGEX = /[^a-z0-9]+/g;
 const MAX_PREFIX_LENGTH = 12;
-const MAX_INDEX_ENTRIES = 1_200_000;
+// A full rebuild briefly holds the old and new snapshot in memory at once
+// (see rebuildFileSearchIndex) — for home directories with hundreds of
+// thousands of entries, that peak alone can approach the process's heap
+// ceiling. Cap entries and space rebuilds out to keep that peak bounded.
+const MAX_INDEX_ENTRIES = 400_000;
 const DEFAULT_MAX_RESULTS = 80;
 const MAX_QUERY_RESULTS = 5_000;
 const MAX_FILE_METADATA_STAT_RESULTS = 240;
 const MIN_REBUILD_GAP_MS = 45_000;
-const DEFAULT_REFRESH_INTERVAL_MS = 8 * 60_000;
+const DEFAULT_REFRESH_INTERVAL_MS = 60 * 60_000;
 const WATCH_EVENT_DEBOUNCE_MS = 500;
 const MAX_SPOTLIGHT_CANDIDATES = 10_000;
 const SPOTLIGHT_SEARCH_TIMEOUT_MS = 2_400;
@@ -637,6 +641,13 @@ export async function rebuildFileSearchIndex(reason = 'manual'): Promise<void> {
 
   rebuildPromise = (async () => {
     indexing = true;
+    // Drop the old snapshot before building the new one instead of after.
+    // Keeping both alive for the duration of the scan (previously: old stays
+    // referenced via `activeIndex` until the new one is fully built) doubles
+    // peak memory for a structure that can itself run into the GB range for
+    // large home directories — searches just return empty during the rebuild
+    // window instead, which is a fair trade against crashing the whole app.
+    activeIndex = null;
     try {
       const snapshot = await buildIndexSnapshot(configuredHomeDir);
       activeIndex = snapshot;

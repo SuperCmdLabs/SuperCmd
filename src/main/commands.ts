@@ -13,6 +13,7 @@
 import { app } from 'electron';
 import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import { rebuildFileSearchIndex } from './file-search-index';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -65,6 +66,22 @@ const TOGGLE_APPEARANCE_ICON_DATA_URL = svgToBase64DataUrl(
 
 const SHUTDOWN_ICON_DATA_URL = svgToBase64DataUrl(
   '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="sdBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fca5a5" stop-opacity="0.7"/><stop offset="1" stop-color="#dc2626" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#sdBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></g></svg>'
+);
+
+const CONFETTI_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="cfBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#f0abfc" stop-opacity="0.7"/><stop offset="1" stop-color="#a21caf" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#cfBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M4 20 12 6 20 10 8 16Z"/><path d="M12 6c1-1.2 2.6-1.8 4-1.4"/><circle cx="21" cy="3" r="0.9" fill="rgba(255,255,255,0.92)" stroke="none"/><circle cx="17" cy="1.5" r="0.9" fill="rgba(255,255,255,0.92)" stroke="none"/><circle cx="23" cy="7" r="0.9" fill="rgba(255,255,255,0.92)" stroke="none"/></g></svg>'
+);
+
+const FIREWORKS_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="fwBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#fde047" stop-opacity="0.7"/><stop offset="1" stop-color="#a16207" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#fwBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="12" y1="22" x2="12" y2="14"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="5" y1="9" x2="8" y2="10.5"/><line x1="19" y1="9" x2="16" y2="10.5"/><line x1="7" y1="4" x2="9.5" y2="7"/><line x1="17" y1="4" x2="14.5" y2="7"/><circle cx="12" cy="10" r="1.1" fill="rgba(255,255,255,0.92)" stroke="none"/></g></svg>'
+);
+
+const SNOW_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="snBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#a5f3fc" stop-opacity="0.7"/><stop offset="1" stop-color="#0e7490" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#snBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="4.2" y1="7" x2="19.8" y2="17"/><line x1="19.8" y1="7" x2="4.2" y2="17"/></g></svg>'
+);
+
+const RAIN_ICON_DATA_URL = svgToBase64DataUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><defs><linearGradient id="rnBg" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#a5b4fc" stop-opacity="0.7"/><stop offset="1" stop-color="#3730a3" stop-opacity="0.82"/></linearGradient></defs><rect x="8" y="8" width="48" height="48" rx="15" fill="url(#rnBg)"/><g transform="translate(18,18) scale(1.167)" stroke="rgba(255,255,255,0.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><line x1="8" y1="19" x2="6.5" y2="22"/><line x1="13" y1="19" x2="11.5" y2="22"/></g></svg>'
 );
 
 export interface CommandInfo {
@@ -129,19 +146,21 @@ function getCommandsDiskCachePath(): string {
   return commandsDiskCachePath;
 }
 
-function loadCommandsDiskCache(): CommandInfo[] | null {
+async function loadCommandsDiskCache(): Promise<CommandInfo[] | null> {
   try {
-    const raw = fs.readFileSync(getCommandsDiskCachePath(), 'utf-8');
+    const raw = await fs.promises.readFile(getCommandsDiskCachePath(), 'utf-8');
     const parsed = JSON.parse(raw) as { version: number; commands: CommandInfo[] };
     if (parsed?.version !== COMMANDS_DISK_CACHE_VERSION) return null;
     const cmds = parsed.commands;
-    // Re-attach icons from the per-app icon disk cache (fast file reads).
-    for (const cmd of cmds) {
-      if (cmd.path) {
-        const icon = getCachedIcon(cmd.path);
-        if (icon) cmd.iconDataUrl = icon;
-      }
-    }
+    // Re-attach icons from the per-app icon disk cache. Reading them
+    // concurrently (fs.promises, backed by libuv's threadpool) instead of one
+    // fs.readFileSync per command avoids serializing every icon read on the
+    // main thread right before the first window is created.
+    await Promise.all(cmds.map(async (cmd) => {
+      if (!cmd.path) return;
+      const icon = await getCachedIconAsync(cmd.path);
+      if (icon) cmd.iconDataUrl = icon;
+    }));
     return cmds;
   } catch {
     return null;
@@ -163,8 +182,8 @@ function saveCommandsDiskCache(commands: CommandInfo[]): void {
 }
 
 /** Call once after app.whenReady() to pre-populate the in-memory cache from disk. */
-export function initCommandsCache(): void {
-  const cmds = loadCommandsDiskCache();
+export async function initCommandsCache(): Promise<void> {
+  const cmds = await loadCommandsDiskCache();
   if (cmds) {
     cachedCommands = cmds;
     staleCommandsFallback = cmds;
@@ -205,6 +224,15 @@ function getCachedIcon(bundlePath: string): string | undefined {
     }
   } catch {}
   return undefined;
+}
+
+async function getCachedIconAsync(bundlePath: string): Promise<string | undefined> {
+  try {
+    const cacheFile = path.join(getIconCacheDir(), `${iconCacheKey(bundlePath)}.b64`);
+    return await fs.promises.readFile(cacheFile, 'utf-8');
+  } catch {
+    return undefined;
+  }
 }
 
 function setCachedIcon(bundlePath: string, dataUrl: string): void {
@@ -1309,10 +1337,48 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
       category: 'system',
     },
     {
+      id: 'system-confetti',
+      title: 'Confetti',
+      subtitle: 'Celebrate with a burst of confetti',
+      keywords: ['confetti', 'celebrate', 'party', 'fun', 'congrats', 'congratulations', 'celebration'],
+      iconDataUrl: CONFETTI_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-fireworks',
+      title: 'Fireworks',
+      subtitle: 'Launch a fireworks show',
+      keywords: ['fireworks', 'rockets', 'celebrate', 'party', 'fun', 'show', 'pyrotechnics'],
+      iconDataUrl: FIREWORKS_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-snow',
+      title: 'Snow',
+      subtitle: 'Let it snow on your screen',
+      keywords: ['snow', 'snowfall', 'winter', 'christmas', 'fun', 'weather'],
+      iconDataUrl: SNOW_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-rain',
+      title: 'Rain',
+      subtitle: 'Make it rain on your screen',
+      keywords: ['rain', 'rainfall', 'storm', 'weather', 'fun'],
+      iconDataUrl: RAIN_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
       id: 'system-reset-launcher-position',
       title: 'Reset Launcher Position',
       keywords: ['reset', 'position', 'center', 'move', 'launcher', 'window', 'default'],
       iconDataUrl: RESET_POSITION_ICON_DATA_URL,
+      category: 'system',
+    },
+    {
+      id: 'system-rebuild-file-index',
+      title: 'Rebuild File Search Index',
+      keywords: ['rebuild', 'refresh', 'reindex', 'file', 'search', 'index', 'supercmd'],
       category: 'system',
     },
     {
@@ -1849,7 +1915,7 @@ async function discoverAndBuildCommands(): Promise<CommandInfo[]> {
   // Installed community extensions
   let extensionCommands: CommandInfo[] = [];
   try {
-    extensionCommands = discoverInstalledExtensionCommands().map((ext) => ({
+    extensionCommands = (await discoverInstalledExtensionCommands()).map((ext) => ({
       id: ext.id,
       title: ext.title,
       subtitle: ext.extensionTitle,
@@ -2104,6 +2170,16 @@ export async function executeCommand(id: string): Promise<boolean> {
       return true;
     } catch (error) {
       console.error('Failed to empty trash:', error);
+      return false;
+    }
+  }
+
+  if (id === 'system-rebuild-file-index') {
+    try {
+      await rebuildFileSearchIndex('manual-command');
+      return true;
+    } catch (error) {
+      console.error('Failed to rebuild file search index:', error);
       return false;
     }
   }
