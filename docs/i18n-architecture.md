@@ -4,13 +4,13 @@
 
 - Keep the first rollout small and reviewable.
 - Ship app-level localization for English, Simplified Chinese, Traditional Chinese, Japanese,
-  Korean, French, German, and Spanish.
+  Korean, French, German, Spanish, Russian, Italian, and Polish.
 - Make future locale additions a resource-only change whenever possible.
 
 ## Current Design
 
 - Persist the user preference as `appLanguage` in `settings.json`.
-- Accept `system`, `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, and `es`.
+- Accept `system`, `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, `es`, `ru`, `it`, and `pl`.
 - Resolve `system` at runtime from the renderer locale.
 - Store translatable copy under `src/renderer/src/i18n/`.
 - Use English as the fallback locale for missing keys.

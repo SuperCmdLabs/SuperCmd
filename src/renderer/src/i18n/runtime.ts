@@ -8,15 +8,16 @@ import deMessages from './locales/de.json';
 import esMessages from './locales/es.json';
 import ruMessages from './locales/ru.json';
 import itMessages from './locales/it.json';
+import plMessages from './locales/pl.json';
 
-export type SupportedAppLocale = 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it';
+export type SupportedAppLocale = 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it' | 'pl';
 export type AppLanguageSetting = 'system' | SupportedAppLocale;
 export type TranslationValues = Record<string, string | number | boolean | null | undefined>;
 type MessageTree = Record<string, string | MessageTree>;
 
 export const DEFAULT_APP_LANGUAGE: AppLanguageSetting = 'system';
 export const FALLBACK_APP_LOCALE: SupportedAppLocale = 'en';
-export const APP_LANGUAGE_OPTIONS: AppLanguageSetting[] = ['system', 'en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'ru', 'it'];
+export const APP_LANGUAGE_OPTIONS: AppLanguageSetting[] = ['system', 'en', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'ru', 'it', 'pl'];
 
 const MESSAGE_CATALOG: Record<SupportedAppLocale, MessageTree> = {
   en: enMessages as MessageTree,
@@ -29,6 +30,7 @@ const MESSAGE_CATALOG: Record<SupportedAppLocale, MessageTree> = {
   'es': esMessages as MessageTree,
   'ru': ruMessages as MessageTree,
   'it': itMessages as MessageTree,
+  'pl': plMessages as MessageTree,
 };
 
 function resolveMessage(tree: MessageTree, key: string): string | null {
@@ -84,6 +86,7 @@ export function normalizeAppLanguage(value: unknown): AppLanguageSetting {
   if (normalized === 'es' || normalized.startsWith('es-')) return 'es';
   if (normalized === 'ru' || normalized.startsWith('ru-')) return 'ru';
   if (normalized === 'it' || normalized.startsWith('it-')) return 'it';
+  if (normalized === 'pl' || normalized.startsWith('pl-')) return 'pl';
   return DEFAULT_APP_LANGUAGE;
 }
 
@@ -115,6 +118,7 @@ export function resolveAppLocale(
   if (normalizedLocale.startsWith('es')) return 'es';
   if (normalizedLocale.startsWith('ru')) return 'ru';
   if (normalizedLocale.startsWith('it')) return 'it';
+  if (normalizedLocale.startsWith('pl')) return 'pl';
   return FALLBACK_APP_LOCALE;
 }
 
