@@ -109,7 +109,8 @@
         "de": "Deutsch",
         "es": "Español",
         "ru": "Ruso",
-        "it": "Italiano"
+        "it": "Italiano",
+        "pl": "Polaco"
       },
       "fontSize": {
         "title": "Font Size",

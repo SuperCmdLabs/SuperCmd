@@ -209,7 +209,8 @@ export type AppLanguage =
   | 'de'
   | 'es'
   | 'ru'
-  | 'it';
+  | 'it'
+  | 'pl';
 
 export interface AppSettings {
   globalShortcut: string;
@@ -895,6 +896,7 @@ function normalizeAppLanguage(value: any): AppLanguage {
   if (normalized === 'es' || normalized.startsWith('es-')) return 'es';
   if (normalized === 'ru' || normalized.startsWith('ru-')) return 'ru';
   if (normalized === 'it' || normalized.startsWith('it-')) return 'it';
+  if (normalized === 'pl' || normalized.startsWith('pl-')) return 'pl';
   return DEFAULT_SETTINGS.appLanguage;
 }
 

@@ -649,7 +649,7 @@ export interface AppSettings {
   ai: AISettings;
   commandMetadata?: Record<string, { subtitle?: string }>;
   debugMode: boolean;
-  appLanguage: 'system' | 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it';
+  appLanguage: 'system' | 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it' | 'pl';
   fontSize: 'extra-small' | 'small' | 'medium' | 'large' | 'extra-large';
   uiStyle: 'default' | 'glassy';
   baseColor: string;
