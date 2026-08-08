@@ -9,6 +9,7 @@ import { isBrowserSearchCommand } from '../utils/browser-search-commands';
 import { WEB_SEARCH_ROOT_BANG_PREFIX } from '../utils/web-search-bangs';
 import { isEditableElement } from '../utils/launcher-misc';
 import { LAST_LAUNCHER_QUERY_KEY } from '../utils/constants';
+import { isImeComposing } from '../utils/keyboard';
 
 function readLauncherQueryHistory(): string[] {
   try {
@@ -246,6 +247,12 @@ export function useLauncherKeyboardControls(
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Ignore the Enter (and any key) that confirms a CJK IME composition
+      // candidate — otherwise the launcher submits/closes mid-composition
+      // (#637 / #296). Must run before every other branch.
+      if (isImeComposing(e.nativeEvent, e.keyCode)) {
+        return;
+      }
       if (showAppUninstall) {
         return;
       }
