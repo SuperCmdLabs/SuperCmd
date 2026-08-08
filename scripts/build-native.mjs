@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
-import { mkdirSync } from 'fs';
+import { mkdirSync, rmSync } from 'fs';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
@@ -48,8 +48,24 @@ const swift = [
     '-framework AVFoundation -framework Foundation'],
 ];
 
+// macOS 11 (Big Sur): the arm64 minimum and a broad floor for Intel Macs. The Swift sources are
+// unchanged — only the minimum-OS and the second arch slice differ from a stock single-arch build.
+const MACOS_DEPLOYMENT_TARGET = 'macos11';
+
 for (const [out, src, frameworks] of swift) {
-  run(`swiftc -O -o ${out} ${src} ${frameworks}`);
+  // Swift's driver rejects `-arch` ("unknown argument"), so compile each arch as its own slice and
+  // merge them into a universal Mach-O with `lipo -create`. Without this, each helper is single-arch
+  // and Intel Macs fail with "bad CPU type in executable" (#634).
+  const arm = `${out}.arm64`;
+  const x86 = `${out}.x86_64`;
+  try {
+    run(`swiftc -O -target arm64-apple-${MACOS_DEPLOYMENT_TARGET} -o ${arm} ${src} ${frameworks}`);
+    run(`swiftc -O -target x86_64-apple-${MACOS_DEPLOYMENT_TARGET} -o ${x86} ${src} ${frameworks}`);
+    run(`lipo -create ${arm} ${x86} -output ${out}`);
+  } finally {
+    rmSync(arm, { force: true });
+    rmSync(x86, { force: true });
+  }
 }
 
 // Build native Node addon (native_helpers.node)

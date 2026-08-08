@@ -6743,14 +6743,32 @@ function ensureHyperKeyMonitorBinary(): string | null {
       return null;
     }
     fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
-    execFileSync('swiftc', [
-      '-O',
-      '-o', binaryPath,
-      sourcePath,
-      '-framework', 'CoreGraphics',
-      '-framework', 'AppKit',
-      '-framework', 'Carbon',
-    ]);
+    // Swift's driver rejects `-arch` ("unknown argument"), so compile each arch slice with an
+    // explicit -target and merge into a universal Mach-O with lipo — mirroring
+    // scripts/build-native.mjs (keep MACOS_DEPLOYMENT_TARGET in sync with it). The host slice is
+    // mandatory (this binary runs on the host that builds it); the other slice is best-effort so a
+    // toolchain that can't cross-compile (e.g. an Intel Mac with only Command Line Tools) still
+    // yields a working host-arch binary instead of disabling HyperKey (#634).
+    const MACOS_DEPLOYMENT_TARGET = 'macos11';
+    const hostArch = process.arch === 'x64' ? 'x86_64' : 'arm64';
+    const otherArch = hostArch === 'arm64' ? 'x86_64' : 'arm64';
+    const frameworks = ['-framework', 'CoreGraphics', '-framework', 'AppKit', '-framework', 'Carbon'];
+    const hostSlice = `${binaryPath}.${hostArch}`;
+    const otherSlice = `${binaryPath}.${otherArch}`;
+    execFileSync('swiftc', ['-O', '-target', `${hostArch}-apple-${MACOS_DEPLOYMENT_TARGET}`, '-o', hostSlice, sourcePath, ...frameworks]);
+    try {
+      execFileSync('swiftc', ['-O', '-target', `${otherArch}-apple-${MACOS_DEPLOYMENT_TARGET}`, '-o', otherSlice, sourcePath, ...frameworks]);
+      execFileSync('lipo', ['-create', hostSlice, otherSlice, '-output', binaryPath]);
+    } catch {
+      // Cross-compile/merge unavailable: ship the host-arch slice (it runs on this host).
+      fs.renameSync(hostSlice, binaryPath);
+    } finally {
+      // Best-effort cleanup only — a transient rm error (EBUSY/EACCES) must never mask a successful
+      // build (which would wrongly disable HyperKey). fs.rmSync({force:true}) only swallows ENOENT.
+      for (const slice of [hostSlice, otherSlice]) {
+        try { fs.rmSync(slice, { force: true }); } catch { /* cleanup is best-effort */ }
+      }
+    }
     return binaryPath;
   } catch (error) {
     console.warn('[HyperKey] Failed to compile hyper key monitor:', error);
