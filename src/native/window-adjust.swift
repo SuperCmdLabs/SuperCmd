@@ -602,8 +602,8 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
     }
   case .center80:
     if let area {
-      let width = max(minWidth, round(area.width * 0.9))
-      let height = max(minHeight, round(area.height * 0.9))
+      let width = max(minWidth, round(area.width * 0.8))
+      let height = max(minHeight, round(area.height * 0.8))
       next = WindowFrame(
         x: area.origin.x + round((area.width - width) / 2),
         y: area.origin.y + round((area.height - height) / 2),
