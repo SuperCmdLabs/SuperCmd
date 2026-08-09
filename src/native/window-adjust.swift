@@ -63,6 +63,13 @@ private struct OutputPayload: Encodable {
   let error: String?
 }
 
+private struct FramePayload: Encodable {
+  let x: CGFloat
+  let y: CGFloat
+  let width: CGFloat
+  let height: CGFloat
+}
+
 private struct TargetHint {
   var bundleId: String?
   var appPath: String?
@@ -81,6 +88,20 @@ private func emit(ok: Bool, error: String? = nil) {
         let text = String(data: data, encoding: .utf8),
         let bytes = (text + "\n").data(using: .utf8) else {
     fputs(ok ? "{\"ok\":true}\n" : "{\"ok\":false,\"error\":\"encode_failed\"}\n", stdout)
+    return
+  }
+  FileHandle.standardOutput.write(bytes)
+}
+
+// Dry-run output used only by `--print-frame` (self-test). Emits the computed
+// target frame as JSON without touching Accessibility or any window.
+private func emitFrame(_ frame: WindowFrame) {
+  let encoder = JSONEncoder()
+  let payload = FramePayload(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+  guard let data = try? encoder.encode(payload),
+        let text = String(data: data, encoding: .utf8),
+        let bytes = (text + "\n").data(using: .utf8) else {
+    fputs("{\"x\":0,\"y\":0,\"width\":0,\"height\":0}\n", stdout)
     return
   }
   FileHandle.standardOutput.write(bytes)
@@ -513,10 +534,19 @@ private func visibleArea(forWindowId windowId: Int) -> CGRect? {
   return visibleBounds(for: windowBounds)
 }
 
-private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea: CGRect?, preferredWindowId: Int?) -> WindowFrame {
-  let area = (preferredWindowId != nil ? visibleArea(forWindowId: preferredWindowId!) : nil)
-    ?? screenVisibleArea(for: base)
-    ?? forcedArea
+private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea: CGRect?, preferredWindowId: Int?, forceUseForcedArea: Bool = false) -> WindowFrame {
+  // When forceUseForcedArea is set (only by the `--print-frame` self-test), skip
+  // live screen detection so the frame is computed deterministically against the
+  // supplied area. The production call path never sets this (default false), so
+  // runtime behavior is unchanged.
+  let area: CGRect?
+  if forceUseForcedArea {
+    area = forcedArea
+  } else {
+    area = (preferredWindowId != nil ? visibleArea(forWindowId: preferredWindowId!) : nil)
+      ?? screenVisibleArea(for: base)
+      ?? forcedArea
+  }
   let stepX = max(1, round(base.width * adjustRatio))
   let stepY = max(1, round(base.height * adjustRatio))
   var next = base
@@ -602,8 +632,10 @@ private func adjustedFrame(_ base: WindowFrame, action: AdjustAction, forcedArea
     }
   case .center80:
     if let area {
-      let width = max(minWidth, round(area.width * 0.9))
-      let height = max(minHeight, round(area.height * 0.9))
+      // "Almost Maximize" (preset id `center-80`): size to 80% of the usable
+      // screen, then center — matching the preset name and its `80%` keyword.
+      let width = max(minWidth, round(area.width * 0.8))
+      let height = max(minHeight, round(area.height * 0.8))
       next = WindowFrame(
         x: area.origin.x + round((area.width - width) / 2),
         y: area.origin.y + round((area.height - height) / 2),
@@ -980,8 +1012,14 @@ private func run() {
   var areaY: CGFloat?
   var areaWidth: CGFloat?
   var areaHeight: CGFloat?
+  var printFrame = false
   while index < args.count {
     let key = args[index]
+    if key == "--print-frame" {
+      printFrame = true
+      index += 1
+      continue
+    }
     if key == "--bundle-id", index + 1 < args.count {
       let value = args[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
       targetHint.bundleId = value.isEmpty ? nil : value
@@ -1030,6 +1068,31 @@ private func run() {
   if let x = areaX, let y = areaY, let width = areaWidth, let height = areaHeight,
      width > 0, height > 0 {
     targetHint.workArea = CGRect(x: x, y: y, width: width, height: height)
+  }
+
+  // Self-test / dry-run mode: compute and print the target frame for the given
+  // action against the supplied area, then exit BEFORE the Accessibility gate so
+  // it runs headlessly. Used by scripts/test-window-adjust-center80.mjs to
+  // assert preset sizing (e.g. center-80 == ~80%). The production app never
+  // passes --print-frame, so this path is never hit at runtime.
+  if printFrame {
+    let dryArea = targetHint.workArea
+      ?? CGRect(x: 0, y: 0, width: NSScreen.main?.frame.width ?? 1440, height: NSScreen.main?.frame.height ?? 900)
+    let dryBase = WindowFrame(
+      x: dryArea.origin.x,
+      y: dryArea.origin.y,
+      width: dryArea.width,
+      height: dryArea.height
+    )
+    let frame = adjustedFrame(
+      dryBase,
+      action: action,
+      forcedArea: dryArea,
+      preferredWindowId: nil,
+      forceUseForcedArea: true
+    )
+    emitFrame(frame)
+    return
   }
 
   guard AXIsProcessTrusted() else {
