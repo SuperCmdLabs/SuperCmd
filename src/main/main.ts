@@ -44,6 +44,7 @@ import {
 import type { AppSettings, BrowserProfileSetting, BrowserProfileFilters, BrowserProfileFilterKind, RelocateMode } from './settings-store';
 import { recordRootSearchLaunchInState, type RootSearchRankingState } from '../shared/root-search-ranking-state';
 import { streamAI, streamAIChat, isAIAvailable, transcribeAudio } from './ai-provider';
+import { preserveWhisperTranscript } from './whisper-delivery';
 import { scanAppRemnants } from './app-uninstaller';
 import * as soulverCalculator from './soulver-calculator';
 import { addMemory, buildMemoryContextSystemPrompt } from './memory';
@@ -17499,7 +17500,10 @@ if let tiff = image?.tiffRepresentation {
     if (typed) {
       return { typed: true, fallbackClipboard: false };
     }
-    return { typed: false, fallbackClipboard: false };
+    return {
+      typed: false,
+      fallbackClipboard: preserveWhisperTranscript(nextText, (transcript) => systemClipboard.writeText(transcript)),
+    };
   });
 
   ipcMain.handle('replace-live-text', async (_event: any, previousText: string, nextText: string) => {

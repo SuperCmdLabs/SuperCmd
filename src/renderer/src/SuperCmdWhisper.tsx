@@ -756,21 +756,21 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
     }
   }, [speechLanguage]);
 
-  const typeIntoWhisperTarget = useCallback(async (text: string): Promise<{ consumed: boolean; typed: boolean }> => {
+  const typeIntoWhisperTarget = useCallback(async (text: string): Promise<{ consumed: boolean; typed: boolean; fallbackClipboard: boolean }> => {
     const nextText = String(text || '');
     if (!nextText) {
-      return { consumed: false, typed: false };
+      return { consumed: false, typed: false, fallbackClipboard: false };
     }
     if (!onboardingCaptureMode && insertIntoLocalWhisperTextTarget(localTextTargetRef.current, nextText)) {
       setErrorText('');
-      return { consumed: true, typed: true };
+      return { consumed: true, typed: true, fallbackClipboard: false };
     }
     const result = await window.electron.whisperTypeTextLive(nextText);
     if (result?.typed) {
       setErrorText('');
-      return { consumed: true, typed: true };
+      return { consumed: true, typed: true, fallbackClipboard: false };
     }
-    return { consumed: false, typed: false };
+    return { consumed: false, typed: false, fallbackClipboard: result?.fallbackClipboard === true };
   }, [onboardingCaptureMode]);
 
   const autoPasteAndClose = useCallback(async (text: string) => {
@@ -788,7 +788,8 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
 
     const applied = await typeIntoWhisperTarget(normalized);
     if (!applied.consumed) {
-      setErrorText(t('whisper.errors.typeIntoActiveApp'));
+      setErrorText(applied.fallbackClipboard ? "Couldn't insert text — copied to clipboard." : t('whisper.errors.typeIntoActiveApp'));
+      return;
     }
     onClose();
   }, [onClose, onboardingCaptureMode, onOnboardingTranscriptAppend, t, typeIntoWhisperTarget]);
@@ -1537,7 +1538,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
             } else {
               const applied = await typeIntoWhisperTarget(combined);
               if (!applied.consumed) {
-                setErrorText(t('whisper.errors.typeIntoActiveApp'));
+                setErrorText(applied.fallbackClipboard ? "Couldn't insert text — copied to clipboard." : t('whisper.errors.typeIntoActiveApp'));
               }
             }
           }
@@ -1597,7 +1598,7 @@ const SuperCmdWhisper: React.FC<SuperCmdWhisperProps> = ({
           } else {
             const applied = await typeIntoWhisperTarget(rawTranscript);
             if (!applied.consumed) {
-              setErrorText(t('whisper.errors.typeIntoActiveApp'));
+              setErrorText(applied.fallbackClipboard ? "Couldn't insert text — copied to clipboard." : t('whisper.errors.typeIntoActiveApp'));
             }
           }
           combinedTranscriptRef.current = '';
