@@ -381,4 +381,4 @@ Thanks to everyone who has contributed to SuperCmd!
 
 ## GitHub Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=SuperCmdLabs/SuperCmd&type=Date)](https://star-history.com/#SuperCmdLabs/SuperCmd&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=SuperCmdLabs/SuperCmd&type=Date)](https://star-history.dera.page/#SuperCmdLabs/SuperCmd&Date)
