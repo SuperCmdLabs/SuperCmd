@@ -10,6 +10,12 @@ import { getExtensionPreferences, setExtensionPreferences } from './extension-pr
 import { getInstalledExtensionNames, installExtension } from './extension-registry';
 import { createNote, getAllNotes, updateNote } from './notes-store';
 import { createQuickLink, getAllQuickLinks } from './quicklink-store';
+import {
+  INVALID_PASSWORD_MESSAGE,
+  RAYCAST_V2_BUILTIN_COMMAND_IDS,
+  isRaycastV2Backup,
+  loadRaycastV2Backup,
+} from './raycast-v2-backup';
 import { discoverScriptCommands, invalidateScriptCommandsCache } from './script-command-runner';
 import { loadSettings, saveSettings, type AppSettings } from './settings-store';
 import { createSnippet, getAllSnippets, updateSnippet } from './snippet-store';
@@ -66,6 +72,11 @@ type RaycastRootSearchRecord = {
   path?: string;
   hotkey?: string;
   searchTerms?: string;
+  /**
+   * Raycast 2.x records the alias explicitly, so it is used as-is. The 1.x
+   * exports only had `searchTerms`, from which an alias has to be guessed.
+   */
+  alias?: string;
 };
 
 type RaycastPinnedMenuItem = {
@@ -76,7 +87,7 @@ type RaycastPinnedMenuItem = {
   type?: string;
 };
 
-type RaycastBackup = {
+export type RaycastBackup = {
   raycast_version?: string;
   builtin_package_quicklinks?: {
     quicklinks?: RaycastQuicklinkRecord[];
@@ -206,6 +217,8 @@ const RAYCAST_SCRIPT_COMMAND_PREFIX = 'raycastScript_';
 const importSessions = new Map<string, { filePath: string; backup: RaycastBackup }>();
 
 const RAYCAST_BUILTIN_COMMAND_ID_MAP: Record<string, string> = {
+  // Raycast 2.x ids arrive verbatim from the converter; 1.x ids follow below.
+  ...RAYCAST_V2_BUILTIN_COMMAND_IDS,
   builtin_command_clipboardHistory: 'system-clipboard-manager',
   builtin_command_createScriptCommand: 'system-create-script-command',
   builtin_command_developer_manageExtensions: 'system-open-extensions-settings',
@@ -399,6 +412,13 @@ function decryptRaycastBuffer(raw: Buffer, password: string): Buffer {
 
 function loadRaycastBackupFromFile(filePath: string, password: string | null): RaycastBackup {
   const raw = fs.readFileSync(filePath);
+  // Checked before the plain-JSON probe so a 2.x file is not stringified whole.
+  if (isRaycastV2Backup(raw)) {
+    if (!password) {
+      throw new Error('A password is required to import this Raycast backup.');
+    }
+    return loadRaycastV2Backup(raw, password);
+  }
   const plain = parseMaybePlainJson(raw);
   if (plain) return plain;
   if (!password) {
@@ -410,7 +430,8 @@ function loadRaycastBackupFromFile(filePath: string, password: string | null): R
 
 function normalizeNavigationStyle(value: unknown): AppSettings['navigationStyle'] | null {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'macos') return 'macos';
+  // Raycast 2.x names the standard macOS bindings "emacs".
+  if (normalized === 'macos' || normalized === 'emacs') return 'macos';
   if (normalized === 'vim') return 'vim';
   return null;
 }
@@ -484,6 +505,20 @@ function normalizeAliasCandidate(searchTerms: unknown): string | null {
   if (candidate.length >= 4) return candidate;
   if (candidate.length >= 3 && count >= 2) return candidate;
   return null;
+}
+
+/**
+ * Raycast 2.x records an explicit `alias`, so it is taken at face value; 1.x
+ * only had `searchTerms`, where the alias still has to be guessed. The guess
+ * ignores aliases shorter than three characters, which would throw away real
+ * two-character aliases when the export actually states them.
+ */
+function resolveRootSearchAlias(item: RaycastRootSearchRecord): string | null {
+  const explicit = String(item?.alias || '').trim().toLowerCase();
+  if (explicit) {
+    return /^[a-z0-9][a-z0-9 -]*$/.test(explicit) ? explicit : null;
+  }
+  return normalizeAliasCandidate(item?.searchTerms);
 }
 
 function normalizeRaycastPath(rawPath: string): string {
@@ -592,7 +627,7 @@ function countPreviewStats(data: RaycastBackup): RaycastImportPreview['counts'] 
       ), 0),
     scriptCommandFolders: data.builtin_package_scriptCommands?.scriptCommandsDirectories?.length || 0,
     commandHotkeys: rootSearchItems.filter((item) => Boolean(String(item?.hotkey || '').trim())).length,
-    commandAliases: rootSearchItems.filter((item) => Boolean(normalizeAliasCandidate(item?.searchTerms))).length,
+    commandAliases: rootSearchItems.filter((item) => Boolean(resolveRootSearchAlias(item))).length,
     pinnedCommands: data.builtin_package_navigation?.pinnedMenuItems?.length || 0,
     aiChats: data['builtin_package_open-ai']?.aiChats?.length || 0,
     quicklinks: data.builtin_package_quicklinks?.quicklinks?.length || 0,
@@ -1057,7 +1092,9 @@ async function importCommandCustomizations(
 
   for (const item of rootSearchItems) {
     const hasHotkey = options.includeHotkeys && Boolean(String(item?.hotkey || '').trim());
-    const hasSearchTerms = options.includeAliases && Boolean(String(item?.searchTerms || '').trim());
+    const hasSearchTerms =
+      options.includeAliases &&
+      Boolean(String(item?.alias || '').trim() || String(item?.searchTerms || '').trim());
     if (!hasHotkey && !hasSearchTerms) continue;
 
     const commandId = resolveRaycastCommandId(item, appCommandIdByPath, scriptCommandIdByPath);
@@ -1084,7 +1121,7 @@ async function importCommandCustomizations(
     }
 
     if (hasSearchTerms) {
-      const aliasCandidate = normalizeAliasCandidate(item.searchTerms);
+      const aliasCandidate = resolveRootSearchAlias(item);
       if (!aliasCandidate) continue;
       const existingAlias = String(nextAliases[commandId] || '').trim();
       if (!existingAlias) {
